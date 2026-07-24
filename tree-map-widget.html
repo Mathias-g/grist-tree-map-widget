@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchard map</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+
+<style>
+  :root {
+    --ink:      #1c2321;
+    --paper:    #f7f6f2;
+    --line:     #d8d5cc;
+    --muted:    #6b6f6c;
+    --tree:     #2f6f4e;
+    --tree-dim: #8fb3a1;
+    --calib:    #b3591a;
+    --sel:      #1a4d8f;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; height: 100%;
+    font-family: var(--sans);
+    color: var(--ink); background: var(--paper);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---- toolbar ---- */
+  #bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+    flex: 0 0 auto;
+  }
+
+  .modes { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .modes button {
+    font: 500 12px/1 var(--sans);
+    padding: 7px 13px; border: 0; background: #fff; color: var(--muted);
+    cursor: pointer; border-right: 1px solid var(--line);
+  }
+  .modes button:last-child { border-right: 0; }
+  .modes button:hover { background: #f0efe9; color: var(--ink); }
+  .modes button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .modes button[aria-pressed="true"][data-mode="calibrate"] { background: var(--calib); }
+  .modes button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
+
+  #hint { font-size: 12px; color: var(--muted); flex: 1 1 auto; }
+  #hint b { color: var(--ink); font-weight: 500; }
+
+  #scale { font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+
+  /* ---- map ---- */
+  #map { flex: 1 1 auto; background: #e9e7e0; }
+  .leaflet-container { background: #e9e7e0; font-family: var(--sans); }
+
+  .pin {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--tree); border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.28);
+  }
+  .pin.is-selected { background: var(--sel); width: 18px; height: 18px; margin: -2px 0 0 -2px; }
+  .pin.is-control  { background: var(--calib); border-radius: 2px; transform: rotate(45deg); }
+
+  .leaflet-tooltip.lbl {
+    background: rgba(28,35,33,.86); border: 0; color: #fff;
+    font: 500 11px/1.3 var(--sans); padding: 2px 6px; box-shadow: none;
+  }
+  .leaflet-tooltip.lbl::before { display: none; }
+
+  /* ---- status strip ---- */
+  #status {
+    flex: 0 0 auto; display: flex; gap: 16px; align-items: center;
+    padding: 5px 12px; border-top: 1px solid var(--line); background: #fff;
+    font: 400 11px/1.5 var(--mono); color: var(--muted);
+  }
+  #status .warn { color: var(--calib); font-family: var(--sans); font-weight: 500; }
+  #status .ok   { color: var(--tree);  font-family: var(--sans); font-weight: 500; }
+
+  /* ---- calibration drawer ---- */
+  #calib {
+    display: none; flex: 0 0 auto; max-height: 45%; overflow: auto;
+    border-top: 1px solid var(--line); background: #fffdf8;
+    padding: 12px;
+  }
+  #calib.open { display: block; }
+  #calib h2 {
+    margin: 0 0 8px; font: 600 12px/1 var(--sans);
+    letter-spacing: .04em; text-transform: uppercase; color: var(--calib);
+  }
+  #calib p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); max-width: 62ch; }
+  table { width: 100%; border-collapse: collapse; font: 400 11px/1 var(--mono); }
+  th {
+    text-align: left; font: 500 10px/1 var(--sans); letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted);
+    padding: 0 8px 5px 0; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 5px 8px 5px 0; border-bottom: 1px solid #eceae3; }
+  td.err-hi { color: var(--calib); }
+  .rm { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 4px; }
+  .rm:hover { color: var(--calib); }
+  #calib-actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+  .btn {
+    font: 500 12px/1 var(--sans); padding: 7px 12px;
+    border: 1px solid var(--line); border-radius: 5px; background: #fff;
+    color: var(--ink); cursor: pointer;
+  }
+  .btn:hover { background: #f0efe9; }
+  .btn.primary { background: var(--calib); border-color: var(--calib); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  #copied { font-size: 11px; color: var(--tree); }
+  #out {
+    width: 100%; margin-top: 10px; min-height: 88px; padding: 8px;
+    font: 400 11px/1.5 var(--mono); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px; background: #fff; resize: vertical;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="bar">
+    <div class="modes" role="group" aria-label="Map mode">
+      <button data-mode="select"    aria-pressed="true">Select</button>
+      <button data-mode="place"     aria-pressed="false">Place</button>
+      <button data-mode="move"      aria-pressed="false">Move</button>
+      <button data-mode="calibrate" aria-pressed="false">Calibrate</button>
+    </div>
+    <div id="hint"></div>
+    <div id="scale"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="status">
+    <span id="cursor">&nbsp;</span>
+    <span id="fit"></span>
+    <span id="count"></span>
+  </div>
+
+  <div id="calib">
+    <h2>Control points</h2>
+    <p>
+      Click a feature you can also find on an aerial map (a fence corner, a shed corner, a gatepost),
+      then paste its real coordinates. Three points anywhere except a straight line will work;
+      four or five spread to the edges of the plot will fit better.
+      When the error looks right, copy the block below into <code>CONTROL_POINTS</code> in this file.
+    </p>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Image x, y</th><th>Latitude</th><th>Longitude</th><th>Error</th><th></th></tr>
+      </thead>
+      <tbody id="cp-rows"></tbody>
+    </table>
+    <div id="calib-actions">
+      <button class="btn primary" id="copy">Copy control points</button>
+      <button class="btn" id="clear">Clear all</button>
+      <span id="copied"></span>
+    </div>
+    <textarea id="out" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — edit this block, nothing else
+   ============================================================ */
+const CONFIG = {
+  // Drone photo. Put it beside this file in the same repo.
+  imageUrl: 'plot.jpg',
+
+  // 'geo'   → store WGS84 latitude/longitude (needs control points below)
+  // 'pixel' → store raw image pixel x/y (no calibration, photo-specific)
+  coordinateMode: 'geo',
+
+  // Column IDs in your Grist table. Column ID, not label.
+  cols: {
+    lat:   'Lat',      // in pixel mode this holds x
+    lng:   'Lng',      // in pixel mode this holds y
+    label: 'Name'      // shown on the pin; set to null to skip
+  },
+
+  // Filled in using the Calibrate mode below, then pasted back here.
+  CONTROL_POINTS: [
+    // { px: 1840, py: 990,  lat: 57.123456, lng: 9.876543 },
+  ],
+
+  newRecordDefaults: { }   // e.g. { Planted: '2026-11-01' }
+};
+
+/* ============================================================
+   Affine fit  (image pixels → degrees)
+   ============================================================ */
+function solve3(A, b) {
+  const M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < 3; c++) {
+    let p = c;
+    for (let r = c + 1; r < 3; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < 3; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k < 4; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return [M[0][3] / M[0][0], M[1][3] / M[1][1], M[2][3] / M[2][2]];
+}
+
+function fitAffine(pts) {
+  if (pts.length < 3) return null;
+  const A = [[0,0,0],[0,0,0],[0,0,0]], bLat = [0,0,0], bLng = [0,0,0];
+  for (const p of pts) {
+    const v = [p.px, p.py, 1];
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) A[i][j] += v[i] * v[j];
+      bLat[i] += v[i] * p.lat;
+      bLng[i] += v[i] * p.lng;
+    }
+  }
+  const cLat = solve3(A, bLat), cLng = solve3(A, bLng);
+  if (!cLat || !cLng) return null;
+
+  const T = {
+    lat: cLat, lng: cLng,
+    toGeo(px, py) {
+      return {
+        lat: cLat[0]*px + cLat[1]*py + cLat[2],
+        lng: cLng[0]*px + cLng[1]*py + cLng[2]
+      };
+    },
+    toPixel(lat, lng) {
+      const det = cLat[0]*cLng[1] - cLat[1]*cLng[0];
+      if (Math.abs(det) < 1e-18) return null;
+      const dLat = lat - cLat[2], dLng = lng - cLng[2];
+      return {
+        px: ( dLat*cLng[1] - cLat[1]*dLng) / det,
+        py: (cLat[0]*dLng  - dLat*cLng[0]) / det
+      };
+    }
+  };
+
+  // metres per pixel, along each image axis
+  const mLat = 111320, mLng = 111320 * Math.cos(pts[0].lat * Math.PI / 180);
+  T.mPerPxX = Math.hypot(cLat[0]*mLat, cLng[0]*mLng);
+  T.mPerPxY = Math.hypot(cLat[1]*mLat, cLng[1]*mLng);
+
+  // per-point residual in metres
+  T.residuals = pts.map(p => {
+    const g = T.toGeo(p.px, p.py);
+    return Math.hypot((g.lat - p.lat) * mLat, (g.lng - p.lng) * mLng);
+  });
+  T.rms = Math.sqrt(T.residuals.reduce((s, r) => s + r*r, 0) / pts.length);
+  return T;
+}
+
+/* ============================================================
+   State
+   ============================================================ */
+let map, imgW = 0, imgH = 0;
+let transform = null;
+let mode = 'select';
+let records = [];
+let controlPoints = CONFIG.CONTROL_POINTS.map(p => ({ ...p }));
+let markers = new Map();          // rowId -> L.Marker
+let cpLayer;
+let selectedId = null;
+const geoMode = () => CONFIG.coordinateMode === 'geo';
+
+// Leaflet CRS.Simple with bounds [[-h,0],[0,w]]:  lat = -pixelY, lng = pixelX
+const toLL   = (px, py) => L.latLng(-py, px);
+const fromLL = ll => ({ px: ll.lng, py: -ll.lat });
+
+const $ = s => document.querySelector(s);
+
+/* ============================================================
+   Boot
+   ============================================================ */
+const img = new Image();
+img.onload = () => { imgW = img.naturalWidth; imgH = img.naturalHeight; initMap(); };
+img.onerror = () => {
+  $('#map').innerHTML =
+    '<div style="padding:24px;font:14px/1.6 var(--sans);color:var(--muted)">' +
+    'Can\'t load <code>' + CONFIG.imageUrl + '</code>. ' +
+    'Put the drone photo beside this file and check the name in CONFIG.imageUrl.</div>';
+};
+img.src = CONFIG.imageUrl;
+
+function initMap() {
+  const bounds = [[-imgH, 0], [0, imgW]];
+  map = L.map('map', {
+    crs: L.CRS.Simple,
+    minZoom: -6, maxZoom: 6,
+    zoomSnap: 0.25,
+    attributionControl: false
+  });
+  L.imageOverlay(CONFIG.imageUrl, bounds).addTo(map);
+  map.fitBounds(bounds);
+  map.setMaxBounds(L.latLngBounds(bounds).pad(0.4));
+
+  cpLayer = L.layerGroup().addTo(map);
+
+  map.on('click', onMapClick);
+  map.on('mousemove', e => {
+    const { px, py } = fromLL(e.latlng);
+    if (px < 0 || py < 0 || px > imgW || py > imgH) { $('#cursor').textContent = '\u00a0'; return; }
+    if (geoMode() && transform) {
+      const g = transform.toGeo(px, py);
+      $('#cursor').textContent = g.lat.toFixed(6) + ',  ' + g.lng.toFixed(6);
+    } else {
+      $('#cursor').textContent = 'x ' + Math.round(px) + ',  y ' + Math.round(py);
+    }
+  });
+
+  rebuildTransform();
+  setMode(geoMode() && !transform ? 'calibrate' : 'select');
+  connectGrist();
+}
+
+/* ============================================================
+   Modes
+   ============================================================ */
+const HINTS = {
+  select:    'Click a tree to select its row in Grist.',
+  place:     'Click the photo to add a tree.',
+  move:      'Drag a tree to correct its position.',
+  calibrate: 'Click a feature you can identify on an aerial map.'
+};
+
+document.querySelectorAll('.modes button').forEach(b =>
+  b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.modes button')
+    .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+  $('#hint').innerHTML = HINTS[m];
+  $('#calib').classList.toggle('open', m === 'calibrate');
+  markers.forEach(mk => mk.dragging && (m === 'move' ? mk.dragging.enable() : mk.dragging.disable()));
+  drawControlPoints();
+}
+
+/* ============================================================
+   Clicks
+   ============================================================ */
+async function onMapClick(e) {
+  const { px, py } = fromLL(e.latlng);
+  if (px < 0 || py < 0 || px > imgW || py > imgH) return;
+
+  if (mode === 'calibrate') { addControlPoint(px, py); return; }
+  if (mode !== 'place') return;
+
+  const c = writeCoords(px, py);
+  if (!c) { alert('Add control points first, or switch CONFIG.coordinateMode to "pixel".'); return; }
+
+  const fields = { ...CONFIG.newRecordDefaults, [CONFIG.cols.lat]: c.a, [CONFIG.cols.lng]: c.b };
+  try {
+    const rowId = await grist.selectedTable.create({ fields });
+    if (rowId && rowId.id) grist.setCursorPos({ rowId: rowId.id });
+  } catch (err) {
+    alert('Grist rejected the write. Set the widget\'s access level to "Full" in the right-hand panel.\n\n' + err.message);
+  }
+}
+
+function writeCoords(px, py) {
+  if (!geoMode()) return { a: Math.round(px), b: Math.round(py) };
+  if (!transform) return null;
+  const g = transform.toGeo(px, py);
+  return { a: +g.lat.toFixed(7), b: +g.lng.toFixed(7) };
+}
+
+function readPixel(rec) {
+  const a = rec[CONFIG.cols.lat], b = rec[CONFIG.cols.lng];
+  if (typeof a !== 'number' || typeof b !== 'number') return null;
+  if (!geoMode()) return { px: a, py: b };
+  return transform ? transform.toPixel(a, b) : null;
+}
+
+/* ============================================================
+   Grist
+   ============================================================ */
+function connectGrist() {
+  grist.ready({
+    requiredAccess: 'full',
+    onEditOptions: () => setMode('calibrate')
+  });
+  grist.onRecords(recs => { records = recs || []; drawTrees(); });
+  grist.onRecord(rec => { selectedId = rec ? rec.id : null; restyleTrees(); });
+}
+
+function drawTrees() {
+  markers.forEach(m => map.removeLayer(m));
+  markers.clear();
+  let placed = 0;
+
+  for (const rec of records) {
+    const p = readPixel(rec);
+    if (!p) continue;
+    placed++;
+
+    const mk = L.marker(toLL(p.px, p.py), {
+      icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }),
+      draggable: mode === 'move',
+      keyboard: true
+    }).addTo(map);
+
+    const name = CONFIG.cols.label ? rec[CONFIG.cols.label] : null;
+    if (name) mk.bindTooltip(String(name), { className: 'lbl', direction: 'top', offset: [0, -8] });
+
+    mk.on('click', ev => {
+      L.DomEvent.stopPropagation(ev);
+      grist.setCursorPos({ rowId: rec.id });
+    });
+
+    mk.on('dragend', async ev => {
+      const q = fromLL(ev.target.getLatLng());
+      const c = writeCoords(q.px, q.py);
+      if (!c) return;
+      await grist.selectedTable.update({
+        id: rec.id,
+        fields: { [CONFIG.cols.lat]: c.a, [CONFIG.cols.lng]: c.b }
+      });
+    });
+
+    markers.set(rec.id, mk);
+  }
+
+  const missing = records.length - placed;
+  $('#count').textContent =
+    placed + ' of ' + records.length + ' placed' + (missing ? '  \u00b7  ' + missing + ' without coordinates' : '');
+  restyleTrees();
+}
+
+function restyleTrees() {
+  markers.forEach((mk, id) => {
+    const el = mk.getElement() && mk.getElement().firstChild;
+    if (el) el.classList.toggle('is-selected', id === selectedId);
+  });
+}
+
+/* ============================================================
+   Calibration
+   ============================================================ */
+function addControlPoint(px, py) {
+  const s = prompt(
+    'Real coordinates for this spot.\nPaste as "latitude, longitude" — copy them straight from an aerial map.',
+    '57.0, 9.9'
+  );
+  if (!s) return;
+  const m = s.split(/[,\s]+/).map(Number).filter(n => !Number.isNaN(n));
+  if (m.length < 2) { alert('Couldn\'t read that. Expected two numbers, e.g. 57.123456, 9.876543'); return; }
+  controlPoints.push({ px: Math.round(px), py: Math.round(py), lat: m[0], lng: m[1] });
+  rebuildTransform();
+}
+
+function rebuildTransform() {
+  transform = geoMode() ? fitAffine(controlPoints) : null;
+  renderCalibTable();
+  drawControlPoints();
+  drawTrees();
+
+  const fit = $('#fit'), scale = $('#scale');
+  if (!geoMode()) {
+    fit.innerHTML = '<span class="ok">Pixel mode</span>';
+    scale.textContent = imgW + ' \u00d7 ' + imgH + ' px';
+  } else if (!transform) {
+    fit.innerHTML = '<span class="warn">Not calibrated \u00b7 ' + controlPoints.length + ' of 3 points</span>';
+    scale.textContent = '';
+  } else {
+    const good = transform.rms < 0.5;
+    fit.innerHTML = '<span class="' + (good ? 'ok' : 'warn') + '">fit \u00b1' + transform.rms.toFixed(2) + ' m</span>';
+    scale.textContent = (transform.mPerPxX * 100).toFixed(1) + ' cm/px';
+  }
+}
+
+function drawControlPoints() {
+  cpLayer.clearLayers();
+  if (mode !== 'calibrate') return;
+  controlPoints.forEach((p, i) => {
+    L.marker(toLL(p.px, p.py), {
+      icon: L.divIcon({ className: '', html: '<div class="pin is-control"></div>', iconSize: [14, 14], iconAnchor: [7, 7] }),
+      interactive: false
+    }).bindTooltip(String(i + 1), { className: 'lbl', permanent: true, direction: 'right', offset: [8, 0] })
+      .addTo(cpLayer);
+  });
+}
+
+function renderCalibTable() {
+  const rows = controlPoints.map((p, i) => {
+    const r = transform ? transform.residuals[i] : null;
+    const cls = r !== null && r > 0.5 ? ' class="err-hi"' : '';
+    return '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td>' + p.px + ', ' + p.py + '</td>' +
+      '<td>' + p.lat.toFixed(6) + '</td>' +
+      '<td>' + p.lng.toFixed(6) + '</td>' +
+      '<td' + cls + '>' + (r === null ? '\u2014' : r.toFixed(2) + ' m') + '</td>' +
+      '<td><button class="rm" data-i="' + i + '" title="Remove point ' + (i + 1) + '">\u00d7</button></td>' +
+      '</tr>';
+  }).join('');
+
+  $('#cp-rows').innerHTML = rows ||
+    '<tr><td colspan="6" style="color:var(--muted);font-family:var(--sans)">No points yet. Click the photo to add one.</td></tr>';
+
+  $('#cp-rows').querySelectorAll('.rm').forEach(b =>
+    b.addEventListener('click', () => { controlPoints.splice(+b.dataset.i, 1); rebuildTransform(); }));
+
+  $('#out').value = 'CONTROL_POINTS: [\n' +
+    controlPoints.map(p =>
+      '    { px: ' + p.px + ', py: ' + p.py + ', lat: ' + p.lat + ', lng: ' + p.lng + ' },'
+    ).join('\n') + '\n  ],';
+}
+
+$('#copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#out').value); }
+  catch { $('#out').select(); }
+  $('#copied').textContent = 'Copied. Paste it into CONFIG.';
+  setTimeout(() => $('#copied').textContent = '', 3000);
+});
+
+$('#clear').addEventListener('click', () => {
+  if (controlPoints.length && confirm('Remove all control points?')) { controlPoints = []; rebuildTransform(); }
+});
+</script>
+</body>
+</html>
