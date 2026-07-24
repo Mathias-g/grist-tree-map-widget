@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planting map</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+
+<style>
+  :root {
+    --ink:      #1c2321;
+    --paper:    #f7f6f2;
+    --line:     #d8d5cc;
+    --muted:    #6b6f6c;
+    --plant:     #2f6f4e;
+    --calib:    #b3591a;
+    --sel:      #1a4d8f;
+    --bad:      #a32b2b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: var(--sans); color: var(--ink); background: var(--paper);
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---- banner ---- */
+  #banner {
+    display: none; flex: 0 0 auto;
+    padding: 8px 12px; font-size: 12px; line-height: 1.45;
+    border-bottom: 1px solid var(--line);
+  }
+  #banner.show { display: block; }
+  #banner.info { background: #eef4f0; color: var(--plant); }
+  #banner.warn { background: #fdf3e9; color: var(--calib); }
+  #banner.err  { background: #fbeded; color: var(--bad); }
+  #banner b { font-weight: 600; }
+  #banner .x { float: right; cursor: pointer; opacity: .6; padding-left: 10px; }
+  #banner .x:hover { opacity: 1; }
+
+  /* ---- toolbar ---- */
+  #bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 7px 12px; border-bottom: 1px solid var(--line);
+    background: #fff; flex: 0 0 auto;
+  }
+  .modes { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .modes button {
+    font: 500 12px/1 var(--sans); padding: 7px 13px;
+    border: 0; border-right: 1px solid var(--line);
+    background: #fff; color: var(--muted); cursor: pointer;
+  }
+  .modes button:last-child { border-right: 0; }
+  .modes button:hover { background: #f0efe9; color: var(--ink); }
+  .modes button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .modes button[aria-pressed="true"][data-mode="calibrate"] { background: var(--calib); }
+  .modes button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
+  .modes button[disabled] { opacity: .4; cursor: not-allowed; }
+
+  #hint  { font-size: 12px; color: var(--muted); flex: 1 1 auto; }
+  #scale { font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+
+  /* ---- map ---- */
+  #map { flex: 1 1 auto; background: #e9e7e0; min-height: 120px; }
+  .leaflet-container { background: #e9e7e0; font-family: var(--sans); }
+  .pin {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--plant); border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.28);
+  }
+  .pin.is-selected { background: var(--sel); width: 18px; height: 18px; margin: -2px 0 0 -2px; }
+  .pin.is-control  { background: var(--calib); border-radius: 2px; transform: rotate(45deg); }
+  .leaflet-tooltip.lbl {
+    background: rgba(28,35,33,.86); border: 0; color: #fff;
+    font: 500 11px/1.3 var(--sans); padding: 2px 6px; box-shadow: none;
+  }
+  .leaflet-tooltip.lbl::before { display: none; }
+
+  /* ---- status ---- */
+  #status {
+    flex: 0 0 auto; display: flex; gap: 16px; align-items: baseline;
+    padding: 5px 12px; border-top: 1px solid var(--line); background: #fff;
+    font: 400 11px/1.5 var(--mono); color: var(--muted);
+  }
+  #fit.good { color: var(--plant);  font-family: var(--sans); font-weight: 500; }
+  #fit.poor { color: var(--calib); font-family: var(--sans); font-weight: 500; }
+  #fit.none { color: var(--bad);   font-family: var(--sans); font-weight: 500; }
+  #source { margin-left: auto; }
+
+  /* ---- calibration drawer ---- */
+  #calib {
+    display: none; flex: 0 0 auto; max-height: 52%; overflow: auto;
+    border-top: 1px solid var(--line); background: #fffdf8; padding: 12px;
+  }
+  #calib.open { display: block; }
+  .sec { margin-bottom: 18px; }
+  .sec:last-child { margin-bottom: 0; }
+  .sec > h2 {
+    margin: 0 0 8px; font: 600 11px/1 var(--sans);
+    letter-spacing: .06em; text-transform: uppercase; color: var(--calib);
+  }
+  .sec p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); max-width: 64ch; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  table { width: 100%; border-collapse: collapse; font: 400 11px/1 var(--mono); }
+  th {
+    text-align: left; font: 500 10px/1 var(--sans); letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted);
+    padding: 0 8px 5px 0; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 6px 8px 6px 0; border-bottom: 1px solid #eceae3; vertical-align: middle; }
+  td.err-hi { color: var(--calib); font-weight: 600; }
+
+  .btn {
+    font: 500 12px/1 var(--sans); padding: 7px 12px;
+    border: 1px solid var(--line); border-radius: 5px;
+    background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .btn:hover:not([disabled]) { background: #f0efe9; }
+  .btn:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: var(--calib); border-color: var(--calib); color: #fff; }
+  .btn.primary:hover:not([disabled]) { filter: brightness(1.08); }
+
+  .rm {
+    font: 500 11px/1 var(--sans); padding: 5px 9px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: #fff; color: var(--muted); cursor: pointer;
+  }
+  .rm:hover { border-color: var(--calib); color: var(--calib); background: #fff8f2; }
+  .rm:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+
+  input[type=text], select {
+    font: 400 12px/1 var(--sans); padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink);
+  }
+  input[type=text] { min-width: 200px; }
+
+  #out {
+    width: 100%; margin-top: 8px; min-height: 84px; padding: 8px;
+    font: 400 11px/1.5 var(--mono); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px; background: #fff; resize: vertical;
+  }
+  .note { font-size: 11px; color: var(--muted); }
+  .note.dirty { color: var(--calib); font-weight: 500; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="banner"><span class="x" id="banner-x">&times;</span><span id="banner-text"></span></div>
+
+  <div id="bar">
+    <div class="modes" role="group" aria-label="Map mode">
+      <button data-mode="select"    aria-pressed="true">Select</button>
+      <button data-mode="place"     aria-pressed="false">Place</button>
+      <button data-mode="move"      aria-pressed="false">Move</button>
+      <button data-mode="calibrate" aria-pressed="false">Calibrate</button>
+    </div>
+    <div id="hint"></div>
+    <div id="scale"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="status">
+    <span id="cursor">&nbsp;</span>
+    <span id="fit"></span>
+    <span id="count"></span>
+    <span id="source"></span>
+  </div>
+
+  <div id="calib">
+
+    <div class="sec">
+      <h2>Map image</h2>
+      <p id="img-state"></p>
+      <div class="row">
+        <input type="file" id="file" accept="image/*">
+        <button class="btn primary" id="upload">Upload image</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="note" for="mapname">Map name</label>
+        <input type="text" id="mapname" placeholder="e.g. North plot">
+        <button class="btn" id="rename" disabled>Save name</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Coordinates</h2>
+      <div class="row">
+        <select id="cmode">
+          <option value="geo">Real coordinates (latitude and longitude)</option>
+          <option value="pixel">Image pixels only</option>
+        </select>
+        <span class="note" id="cmode-note"></span>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Control points</h2>
+      <p>
+        Click a feature on the photo that you can also find on an aerial map, then paste its real
+        coordinates. Three points that aren't in a straight line will work. Four or five spread to
+        the edges of the plot fit better. Corners of buildings and fences are good targets; tree
+        canopies are not, because they lean away from the camera.
+      </p>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Image x, y</th><th>Latitude</th><th>Longitude</th><th>Error</th><th>Action</th></tr>
+        </thead>
+        <tbody id="cp-rows"></tbody>
+      </table>
+
+      <textarea id="out" spellcheck="false"
+        placeholder="Paste control points here and press Apply. Accepts the CONTROL_POINTS block, plain JSON, or four numbers per line."></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="apply">Apply pasted points</button>
+        <button class="btn" id="copy">Copy</button>
+        <button class="btn" id="clear">Remove all</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Save</h2>
+      <div class="row">
+        <button class="btn primary" id="save" disabled>Save calibration</button>
+        <button class="btn" id="discard" disabled>Discard changes</button>
+        <span class="note" id="dirty"></span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG
+   Only the demo fallback and the plant column names live here.
+   Real configuration lives in the document.
+   ============================================================ */
+const CONFIG = {
+  // Bundled placeholder, shown until a real image is uploaded.
+  placeholderUrl: 'plot.jpg',
+  placeholderPoints: [
+    { px: 60,  py: 60,  lat: 57.460000, lng: 9.980000 },
+    { px: 690, py: 60,  lat: 57.459953, lng: 9.980625 },
+    { px: 60,  py: 470, lat: 57.459781, lng: 9.979943 }
+  ],
+
+  // Columns expected on the table this widget is bound to.
+  cols: { lat: 'Lat', lng: 'Lng', label: 'Name' },
+
+  newRecordDefaults: {},
+
+  // Refuse to save a calibration worse than this, unless confirmed.
+  maxRmsMetres: 1.0
+};
+
+const MAP_TABLE = 'Map_images';
+const MC = {
+  name:   'Name',
+  image:  'Image',
+  points: 'Control_points',
+  w:      'Image_width',
+  h:      'Image_height',
+  against:'Calibrated_against',
+  mode:   'Coordinate_mode',
+  plants: 'Plants_table'
+};
+const MAP_SCHEMA = [
+  { id: MC.name,    type: 'Text' },
+  { id: MC.image,   type: 'Attachments' },
+  { id: MC.points,  type: 'Text' },
+  { id: MC.w,       type: 'Numeric' },
+  { id: MC.h,       type: 'Numeric' },
+  { id: MC.against, type: 'Numeric' },
+  { id: MC.mode,    type: 'Text' },
+  { id: MC.plants,   type: 'Text' }
+];
+
+/* ============================================================
+   Affine fit (image pixels -> degrees)
+   ============================================================ */
+function solve3(A, b) {
+  const M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < 3; c++) {
+    let p = c;
+    for (let r = c + 1; r < 3; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < 3; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k < 4; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return [M[0][3] / M[0][0], M[1][3] / M[1][1], M[2][3] / M[2][2]];
+}
+
+function fitAffine(pts) {
+  if (pts.length < 3) return null;
+  const A = [[0,0,0],[0,0,0],[0,0,0]], bLat = [0,0,0], bLng = [0,0,0];
+  for (const p of pts) {
+    const v = [p.px, p.py, 1];
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) A[i][j] += v[i] * v[j];
+      bLat[i] += v[i] * p.lat;
+      bLng[i] += v[i] * p.lng;
+    }
+  }
+  const cLat = solve3(A, bLat), cLng = solve3(A, bLng);
+  if (!cLat || !cLng) return null;
+
+  const T = {
+    toGeo(px, py) {
+      return {
+        lat: cLat[0]*px + cLat[1]*py + cLat[2],
+        lng: cLng[0]*px + cLng[1]*py + cLng[2]
+      };
+    },
+    toPixel(lat, lng) {
+      const det = cLat[0]*cLng[1] - cLat[1]*cLng[0];
+      if (Math.abs(det) < 1e-18) return null;
+      const dLat = lat - cLat[2], dLng = lng - cLng[2];
+      return {
+        px: ( dLat*cLng[1] - cLat[1]*dLng) / det,
+        py: (cLat[0]*dLng  - dLat*cLng[0]) / det
+      };
+    }
+  };
+  const mLat = 111320, mLng = 111320 * Math.cos(pts[0].lat * Math.PI / 180);
+  T.mPerPxX = Math.hypot(cLat[0]*mLat, cLng[0]*mLng);
+  T.residuals = pts.map(p => {
+    const g = T.toGeo(p.px, p.py);
+    return Math.hypot((g.lat - p.lat) * mLat, (g.lng - p.lng) * mLng);
+  });
+  T.rms = Math.sqrt(T.residuals.reduce((s, r) => s + r*r, 0) / pts.length);
+  return T;
+}
+
+/* ============================================================
+   State
+   ============================================================ */
+let map, imgW = 0, imgH = 0;
+let transform = null;
+let mode = 'select';
+let records = [];
+let markers = new Map();
+let cpLayer, selectedId = null;
+
+let boundTable = null;      // table id this widget is bound to
+let mapRow = null;          // record from Map_images, or null
+let attachmentId = 0;       // 0 = placeholder
+let usingPlaceholder = true;
+let coordinateMode = 'geo';
+let controlPoints = [];
+let savedSignature = '';    // for dirty tracking
+
+const $ = s => document.querySelector(s);
+const geoMode = () => coordinateMode === 'geo';
+const toLL   = (px, py) => L.latLng(-py, px);
+const fromLL = ll => ({ px: ll.lng, py: -ll.lat });
+const sig = () => JSON.stringify(controlPoints) + '|' + coordinateMode;
+const dirty = () => sig() !== savedSignature;
+
+/* ============================================================
+   Messages
+   ============================================================ */
+let bannerTimer = null;
+function say(html, kind) {
+  const b = $('#banner');
+  $('#banner-text').innerHTML = html;
+  b.className = 'show ' + (kind || 'info');
+  clearTimeout(bannerTimer);
+  if (kind === 'info') bannerTimer = setTimeout(hide, 6000);
+}
+function hide() { $('#banner').className = ''; }
+$('#banner-x').addEventListener('click', hide);
+const errText = e => (e && e.message) ? e.message : String(e);
+
+/* ============================================================
+   Grist helpers
+   ============================================================ */
+function toRecords(columnar) {
+  if (!columnar || !columnar.id) return [];
+  return columnar.id.map((id, i) => {
+    const r = { id };
+    for (const k of Object.keys(columnar)) if (k !== 'id') r[k] = columnar[k][i];
+    return r;
+  });
+}
+// Attachment cells arrive either decoded as [id, ...] or encoded as ['L', id, ...]
+function attIds(cell) {
+  if (!Array.isArray(cell)) return [];
+  return cell[0] === 'L' ? cell.slice(1) : cell;
+}
+
+async function mapTableExists() {
+  try { return (await grist.docApi.listTables()).includes(MAP_TABLE); }
+  catch (e) { say('Could not list tables: ' + errText(e), 'err'); return false; }
+}
+
+async function ensureMapTable() {
+  if (await mapTableExists()) return true;
+  try {
+    await grist.docApi.applyUserActions([['AddTable', MAP_TABLE, MAP_SCHEMA]]);
+  } catch (e) {
+    say('Could not create the <b>' + MAP_TABLE + '</b> table: ' + errText(e) +
+        '. If this document has access rules, creating tables needs the structure permission.', 'err');
+    return false;
+  }
+  // Verify rather than trust: Grist may uniquify a conflicting name.
+  if (!(await mapTableExists())) {
+    say('Tried to create <b>' + MAP_TABLE + '</b> but it is not there afterwards. ' +
+        'Check whether a table with a similar name was created instead.', 'err');
+    return false;
+  }
+  return true;
+}
+
+async function ensureMapRow() {
+  if (mapRow) return mapRow;
+  if (!(await ensureMapTable())) return null;
+  try {
+    const res = await grist.getTable(MAP_TABLE).create({
+      fields: {
+        [MC.name]:  boundTable ? boundTable + ' map' : 'Map',
+        [MC.plants]: boundTable || '',
+        [MC.mode]:  coordinateMode,
+        [MC.against]: 0
+      }
+    });
+    await loadMapRow(res && res.id);
+    return mapRow;
+  } catch (e) {
+    say('Could not create a row in <b>' + MAP_TABLE + '</b>: ' + errText(e), 'err');
+    return null;
+  }
+}
+
+async function loadMapRow(preferId) {
+  mapRow = null;
+  if (!(await mapTableExists())) return;
+  let rows;
+  try { rows = toRecords(await grist.docApi.fetchTable(MAP_TABLE)); }
+  catch (e) { say('Could not read <b>' + MAP_TABLE + '</b>: ' + errText(e), 'err'); return; }
+
+  if (preferId) mapRow = rows.find(r => r.id === preferId) || null;
+  if (!mapRow && boundTable) mapRow = rows.find(r => r[MC.plants] === boundTable) || null;
+  if (!mapRow) {
+    // Secondary pointer, in case the bound table id was unavailable.
+    try {
+      const opt = await grist.widgetApi.getOption('mapRowId');
+      if (opt) mapRow = rows.find(r => r.id === opt) || null;
+    } catch { /* options unavailable, ignore */ }
+  }
+  if (mapRow) { try { await grist.widgetApi.setOption('mapRowId', mapRow.id); } catch {} }
+}
+
+/* ============================================================
+   Boot
+   ============================================================ */
+(async function boot() {
+  try {
+    grist.ready({ requiredAccess: 'full', onEditOptions: () => setMode('calibrate') });
+  } catch (e) {
+    say('Could not initialise the Grist API: ' + errText(e), 'err');
+  }
+
+  try { boundTable = await grist.getTable().getTableId(); }
+  catch (e) {
+    boundTable = null;
+    say('Could not determine which table this widget is bound to. ' +
+        'Falling back to the saved map row. ' + errText(e), 'warn');
+  }
+
+  await loadMapRow();
+  await loadImageAndPoints();
+  checkPlantColumns();
+
+  grist.onRecords(recs => { records = recs || []; drawPlants(); });
+  grist.onRecord(rec => { selectedId = rec ? rec.id : null; restylePlants(); });
+})();
+
+async function checkPlantColumns() {
+  let data;
+  try { data = await grist.docApi.fetchSelectedTable(); }
+  catch { return; }
+  const have = Object.keys(data || {});
+  const need = [CONFIG.cols.lat, CONFIG.cols.lng, CONFIG.cols.label].filter(Boolean);
+  const missing = need.filter(c => !have.includes(c));
+  if (missing.length) {
+    say('This table is missing ' + missing.map(c => '<b>' + c + '</b>').join(', ') +
+        '. Add ' + (missing.length > 1 ? 'those columns' : 'that column') +
+        ' (Lat and Lng as Numeric, Name as Text). Check the column <i>ID</i> in the right panel, ' +
+        'not the label: renaming a column leaves its ID unchanged.', 'err');
+  }
+}
+
+/* ============================================================
+   Image loading
+   ============================================================ */
+async function loadImageAndPoints() {
+  let url = CONFIG.placeholderUrl;
+  usingPlaceholder = true;
+  attachmentId = 0;
+
+  const ids = mapRow ? attIds(mapRow[MC.image]) : [];
+  if (ids.length) {
+    if (ids.length > 1) say('This map row holds ' + ids.length + ' images. Using the first.', 'warn');
+    try {
+      const tok = await grist.docApi.getAccessToken({ readOnly: true });
+      url = tok.baseUrl + '/attachments/' + ids[0] + '/download?auth=' + tok.token;
+      usingPlaceholder = false;
+      attachmentId = ids[0];
+    } catch (e) {
+      say('Could not fetch the map image from Grist, showing the placeholder instead: ' +
+          errText(e), 'err');
+    }
+  }
+
+  coordinateMode = (mapRow && mapRow[MC.mode]) || 'geo';
+  $('#cmode').value = coordinateMode;
+
+  await new Promise(res => {
+    const im = new Image();
+    im.onload = () => { imgW = im.naturalWidth; imgH = im.naturalHeight; res(); };
+    im.onerror = () => {
+      imgW = imgH = 0;
+      say(usingPlaceholder
+        ? 'Cannot load the placeholder <code>' + CONFIG.placeholderUrl + '</code>. ' +
+          'Put it beside this file in your repo.'
+        : 'The map image could not be downloaded.', 'err');
+      res();
+    };
+    im.src = url;
+  });
+
+  resolveControlPoints();
+  if (imgW) initMap(url);
+  refreshCalibUI();
+  rebuildTransform();
+  setMode(needsCalibration() ? 'calibrate' : 'select');
+}
+
+function needsCalibration() {
+  return geoMode() && !transform;
+}
+
+function resolveControlPoints() {
+  controlPoints = [];
+
+  if (!mapRow) {
+    if (usingPlaceholder) controlPoints = CONFIG.placeholderPoints.map(p => ({ ...p }));
+    savedSignature = '';   // nothing is saved yet
+    return;
+  }
+
+  const stored = (mapRow[MC.points] || '').trim();
+  const against = Number(mapRow[MC.against] || 0);
+  const sw = Number(mapRow[MC.w] || 0), sh = Number(mapRow[MC.h] || 0);
+
+  let parsed = [];
+  if (stored) {
+    parsed = parsePoints(stored);
+    if (!parsed.length) {
+      say('The <b>' + MC.points + '</b> cell on this map row could not be read. ' +
+          'It should be a JSON list of {px, py, lat, lng} objects.', 'err');
+    }
+  }
+
+  if (parsed.length && against !== attachmentId) {
+    say('The saved calibration was made against a different image, so it no longer applies. ' +
+        'Add control points for the current image and save.', 'warn');
+    parsed = [];
+  } else if (parsed.length && sw && sh && (sw !== imgW || sh !== imgH)) {
+    say('The saved calibration was made against an image of ' + sw + ' \u00d7 ' + sh +
+        ' px but this one is ' + imgW + ' \u00d7 ' + imgH + '. Recalibrate before trusting it.', 'warn');
+    parsed = [];
+  }
+
+  controlPoints = parsed;
+  savedSignature = sig();
+}
+
+/* ============================================================
+   Map
+   ============================================================ */
+function initMap(url) {
+  if (map) { map.remove(); map = null; markers.clear(); }
+  const bounds = [[-imgH, 0], [0, imgW]];
+  map = L.map('map', {
+    crs: L.CRS.Simple, minZoom: -6, maxZoom: 6, zoomSnap: 0.25, attributionControl: false
+  });
+  L.imageOverlay(url, bounds).addTo(map);
+  map.fitBounds(bounds);
+  map.setMaxBounds(L.latLngBounds(bounds).pad(0.4));
+  cpLayer = L.layerGroup().addTo(map);
+
+  map.on('click', onMapClick);
+  map.on('mousemove', e => {
+    const { px, py } = fromLL(e.latlng);
+    if (px < 0 || py < 0 || px > imgW || py > imgH) { $('#cursor').textContent = '\u00a0'; return; }
+    if (geoMode() && transform) {
+      const g = transform.toGeo(px, py);
+      $('#cursor').textContent = g.lat.toFixed(6) + ',  ' + g.lng.toFixed(6);
+    } else {
+      $('#cursor').textContent = 'x ' + Math.round(px) + ',  y ' + Math.round(py);
+    }
+  });
+  drawPlants();
+}
+
+const HINTS = {
+  select:    'Click a plant to select its row in Grist.',
+  place:     'Click the photo to add a plant.',
+  move:      'Drag a plant to correct its position.',
+  calibrate: 'Click a feature you can identify on an aerial map.'
+};
+
+document.querySelectorAll('.modes button').forEach(b =>
+  b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.modes button')
+    .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+  $('#hint').textContent = HINTS[m];
+  $('#calib').classList.toggle('open', m === 'calibrate');
+  markers.forEach(mk => mk.dragging && (m === 'move' ? mk.dragging.enable() : mk.dragging.disable()));
+  drawControlPoints();
+}
+
+async function onMapClick(e) {
+  const { px, py } = fromLL(e.latlng);
+  if (px < 0 || py < 0 || px > imgW || py > imgH) return;
+
+  if (mode === 'calibrate') { addControlPoint(px, py); return; }
+  if (mode !== 'place') return;
+
+  const c = writeCoords(px, py);
+  if (!c) {
+    say('No calibration yet. Add control points in the Calibrate tab, ' +
+        'or switch the coordinate mode to image pixels.', 'warn');
+    return;
+  }
+  try {
+    const r = await grist.selectedTable.create({
+      fields: { ...CONFIG.newRecordDefaults, [CONFIG.cols.lat]: c.a, [CONFIG.cols.lng]: c.b }
+    });
+    if (r && r.id) grist.setCursorPos({ rowId: r.id });
+  } catch (err) {
+    say('Could not add a plant: ' + errText(err) +
+        '. Check that the widget\'s access level is set to Full.', 'err');
+  }
+}
+
+function writeCoords(px, py) {
+  if (!geoMode()) return { a: Math.round(px), b: Math.round(py) };
+  if (!transform) return null;
+  const g = transform.toGeo(px, py);
+  return { a: +g.lat.toFixed(7), b: +g.lng.toFixed(7) };
+}
+
+function readPixel(rec) {
+  const a = rec[CONFIG.cols.lat], b = rec[CONFIG.cols.lng];
+  if (typeof a !== 'number' || typeof b !== 'number') return null;
+  if (!geoMode()) return { px: a, py: b };
+  return transform ? transform.toPixel(a, b) : null;
+}
+
+function drawPlants() {
+  if (!map) return;
+  markers.forEach(m => map.removeLayer(m));
+  markers.clear();
+  let placed = 0;
+
+  for (const rec of records) {
+    const p = readPixel(rec);
+    if (!p) continue;
+    placed++;
+
+    const mk = L.marker(toLL(p.px, p.py), {
+      icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [14,14], iconAnchor: [7,7] }),
+      draggable: mode === 'move', keyboard: true
+    }).addTo(map);
+
+    const name = CONFIG.cols.label ? rec[CONFIG.cols.label] : null;
+    if (name) mk.bindTooltip(String(name), { className: 'lbl', direction: 'top', offset: [0,-8] });
+
+    mk.on('click', ev => { L.DomEvent.stopPropagation(ev); grist.setCursorPos({ rowId: rec.id }); });
+    mk.on('dragend', async ev => {
+      const q = fromLL(ev.target.getLatLng());
+      const c = writeCoords(q.px, q.py);
+      if (!c) return;
+      try {
+        await grist.selectedTable.update({
+          id: rec.id, fields: { [CONFIG.cols.lat]: c.a, [CONFIG.cols.lng]: c.b }
+        });
+      } catch (err) { say('Could not move that plant: ' + errText(err), 'err'); }
+    });
+
+    markers.set(rec.id, mk);
+  }
+
+  const missing = records.length - placed;
+  $('#count').textContent = placed + ' of ' + records.length + ' placed' +
+    (missing ? '  \u00b7  ' + missing + ' without coordinates' : '');
+  restylePlants();
+}
+
+function restylePlants() {
+  markers.forEach((mk, id) => {
+    const el = mk.getElement() && mk.getElement().firstChild;
+    if (el) el.classList.toggle('is-selected', id === selectedId);
+  });
+}
+
+/* ============================================================
+   Calibration
+   ============================================================ */
+function addControlPoint(px, py) {
+  const s = prompt(
+    'Real coordinates for this spot.\nPaste as "latitude, longitude" \u2014 copy them from an aerial map.',
+    '57.0, 9.9'
+  );
+  if (!s) return;
+  const n = s.split(/[,\s]+/).map(Number).filter(v => !Number.isNaN(v));
+  if (n.length < 2) { say('Could not read "' + s + '". Expected two numbers.', 'warn'); return; }
+  controlPoints.push({ px: Math.round(px), py: Math.round(py), lat: n[0], lng: n[1] });
+  rebuildTransform();
+}
+
+function parsePoints(text) {
+  const re = /"?px"?\s*:\s*(-?[\d.]+)\s*,\s*"?py"?\s*:\s*(-?[\d.]+)\s*,\s*"?lat"?\s*:\s*(-?[\d.]+)\s*,\s*"?lng"?\s*:\s*(-?[\d.]+)/g;
+  const found = [...text.matchAll(re)].map(m => ({ px:+m[1], py:+m[2], lat:+m[3], lng:+m[4] }));
+  if (found.length) return found;
+  // Fallback: four bare numbers per line
+  return text.split(/\n/).map(l => {
+    const n = l.split(/[,\s]+/).map(Number).filter(v => !Number.isNaN(v));
+    return n.length === 4 ? { px:n[0], py:n[1], lat:n[2], lng:n[3] } : null;
+  }).filter(Boolean);
+}
+
+function rebuildTransform() {
+  transform = geoMode() ? fitAffine(controlPoints) : null;
+  renderCalibTable();
+  drawControlPoints();
+  drawPlants();
+  refreshStatus();
+  refreshSaveState();
+}
+
+function refreshStatus() {
+  const fit = $('#fit'), scale = $('#scale');
+  if (!geoMode()) {
+    fit.className = 'good'; fit.textContent = 'Pixel mode';
+    scale.textContent = imgW + ' \u00d7 ' + imgH + ' px';
+  } else if (!transform) {
+    fit.className = 'none';
+    fit.textContent = 'Not calibrated \u00b7 ' + controlPoints.length + ' of 3 points';
+    scale.textContent = '';
+  } else {
+    const good = transform.rms <= CONFIG.maxRmsMetres;
+    fit.className = good ? 'good' : 'poor';
+    fit.textContent = 'fit \u00b1' + transform.rms.toFixed(2) + ' m';
+    scale.textContent = (transform.mPerPxX * 100).toFixed(1) + ' cm/px';
+  }
+  $('#source').textContent = usingPlaceholder ? 'placeholder image' : 'image from Grist';
+}
+
+function drawControlPoints() {
+  if (!cpLayer) return;
+  cpLayer.clearLayers();
+  if (mode !== 'calibrate') return;
+  controlPoints.forEach((p, i) => {
+    L.marker(toLL(p.px, p.py), {
+      icon: L.divIcon({ className: '', html: '<div class="pin is-control"></div>', iconSize: [14,14], iconAnchor: [7,7] }),
+      interactive: false
+    }).bindTooltip(String(i + 1), { className: 'lbl', permanent: true, direction: 'right', offset: [8,0] })
+      .addTo(cpLayer);
+  });
+}
+
+function renderCalibTable() {
+  const rows = controlPoints.map((p, i) => {
+    const r = transform ? transform.residuals[i] : null;
+    const cls = (r !== null && r > CONFIG.maxRmsMetres) ? ' class="err-hi"' : '';
+    return '<tr><td>' + (i+1) + '</td>' +
+      '<td>' + p.px + ', ' + p.py + '</td>' +
+      '<td>' + p.lat.toFixed(6) + '</td>' +
+      '<td>' + p.lng.toFixed(6) + '</td>' +
+      '<td' + cls + '>' + (r === null ? '\u2014' : r.toFixed(2) + ' m') + '</td>' +
+      '<td><button class="rm" data-i="' + i + '">Remove</button></td></tr>';
+  }).join('');
+
+  $('#cp-rows').innerHTML = rows ||
+    '<tr><td colspan="6" style="color:var(--muted);font-family:var(--sans)">' +
+    'No points yet. Click the photo to add one.</td></tr>';
+
+  $('#cp-rows').querySelectorAll('.rm').forEach(b =>
+    b.addEventListener('click', () => {
+      controlPoints.splice(+b.dataset.i, 1);
+      rebuildTransform();
+    }));
+
+  // Don't clobber the box while it is being edited.
+  if (document.activeElement !== $('#out')) {
+    $('#out').value = controlPoints.length
+      ? 'CONTROL_POINTS: [\n' + controlPoints.map(p =>
+          '    { px: ' + p.px + ', py: ' + p.py + ', lat: ' + p.lat + ', lng: ' + p.lng + ' },'
+        ).join('\n') + '\n  ],'
+      : '';
+  }
+}
+
+/* ---- calibration UI wiring ---- */
+$('#apply').addEventListener('click', () => {
+  const found = parsePoints($('#out').value);
+  if (!found.length) {
+    say('Nothing recognised in that text. Each point needs px, py, lat and lng.', 'warn');
+    return;
+  }
+  controlPoints = found;
+  rebuildTransform();
+  say(found.length + ' points applied. Not saved yet.', 'info');
+});
+
+$('#copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#out').value); say('Copied.', 'info'); }
+  catch { $('#out').select(); }
+});
+
+$('#clear').addEventListener('click', () => {
+  if (!controlPoints.length) return;
+  if (confirm('Remove all ' + controlPoints.length + ' control points?')) {
+    controlPoints = [];
+    rebuildTransform();
+  }
+});
+
+$('#cmode').addEventListener('change', e => {
+  coordinateMode = e.target.value;
+  $('#cmode-note').textContent = geoMode()
+    ? 'Plants are stored as latitude and longitude.'
+    : 'Plants are stored as pixel positions in this image only.';
+  rebuildTransform();
+});
+
+function refreshSaveState() {
+  const d = dirty();
+  $('#save').disabled = !d;
+  $('#discard').disabled = !d;
+  $('#dirty').textContent = d ? 'Unsaved changes' : (mapRow ? 'Saved' : 'Nothing saved yet');
+  $('#dirty').className = 'note' + (d ? ' dirty' : '');
+}
+
+function refreshCalibUI() {
+  $('#cmode').value = coordinateMode;
+  $('#cmode').dispatchEvent(new Event('change'));
+  $('#mapname').value = mapRow ? (mapRow[MC.name] || '') : '';
+  $('#rename').disabled = !mapRow;
+  $('#img-state').innerHTML = usingPlaceholder
+    ? 'Showing the bundled placeholder image. Upload a photo of your plot to replace it. ' +
+      'Calibration done on the placeholder can be saved, but it will be discarded when you upload.'
+    : 'Using an image stored in this document (attachment ' + attachmentId + ', ' +
+      imgW + ' \u00d7 ' + imgH + ' px).';
+  refreshSaveState();
+}
+
+/* ---- save ---- */
+$('#save').addEventListener('click', async () => {
+  if (geoMode() && transform && transform.rms > CONFIG.maxRmsMetres) {
+    if (!confirm('This calibration is off by ' + transform.rms.toFixed(2) +
+      ' m on average, which is worse than the ' + CONFIG.maxRmsMetres +
+      ' m threshold.\n\nExisting plants keep the coordinates they were given, so a bad ' +
+      'calibration is not something you can correct later. Save anyway?')) return;
+  }
+  if (geoMode() && !transform && controlPoints.length) {
+    if (!confirm('Fewer than three usable points, so there is no working transform. Save anyway?')) return;
+  }
+
+  const row = await ensureMapRow();
+  if (!row) return;
+
+  try {
+    await grist.getTable(MAP_TABLE).update({
+      id: row.id,
+      fields: {
+        [MC.points]:  JSON.stringify(controlPoints),
+        [MC.w]:       imgW,
+        [MC.h]:       imgH,
+        [MC.against]: attachmentId,
+        [MC.mode]:    coordinateMode,
+        [MC.plants]:   boundTable || row[MC.plants] || ''
+      }
+    });
+    savedSignature = sig();
+    refreshSaveState();
+    say('Calibration saved to <b>' + MAP_TABLE + '</b>.', 'info');
+  } catch (e) {
+    say('Could not save the calibration: ' + errText(e), 'err');
+  }
+});
+
+$('#discard').addEventListener('click', async () => {
+  if (!confirm('Discard unsaved calibration changes?')) return;
+  await loadMapRow(mapRow && mapRow.id);
+  resolveControlPoints();
+  refreshCalibUI();
+  rebuildTransform();
+});
+
+$('#rename').addEventListener('click', async () => {
+  if (!mapRow) return;
+  try {
+    await grist.getTable(MAP_TABLE).update({ id: mapRow.id, fields: { [MC.name]: $('#mapname').value } });
+    mapRow[MC.name] = $('#mapname').value;
+    say('Name saved.', 'info');
+  } catch (e) { say('Could not save the name: ' + errText(e), 'err'); }
+});
+
+/* ---- upload ---- */
+$('#upload').addEventListener('click', async () => {
+  const file = $('#file').files[0];
+  if (!file) { say('Choose an image file first.', 'warn'); return; }
+  if (!/^image\//.test(file.type)) { say('That is not an image file.', 'warn'); return; }
+
+  if (controlPoints.length && dirty() &&
+      !confirm('Uploading a new image discards the current control points, because they refer to ' +
+               'pixels in the old one. Continue?')) return;
+
+  $('#upload').disabled = true;
+  say('Uploading\u2026', 'info');
+
+  try {
+    const tok = await grist.docApi.getAccessToken({ readOnly: false });
+    const fd = new FormData();
+    fd.append('upload', file, file.name);
+    const res = await fetch(tok.baseUrl + '/attachments?auth=' + tok.token, {
+      method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    const ids = await res.json();
+    const newId = Array.isArray(ids) ? ids[0] : ids;
+    if (!newId) throw new Error('the server did not return an attachment id');
+
+    const row = await ensureMapRow();
+    if (!row) return;
+
+    await grist.getTable(MAP_TABLE).update({
+      id: row.id,
+      fields: {
+        [MC.image]:   ['L', newId],
+        [MC.points]:  '',
+        [MC.against]: newId,
+        [MC.w]:       0,
+        [MC.h]:       0,
+        [MC.plants]:   boundTable || row[MC.plants] || ''
+      }
+    });
+
+    await loadMapRow(row.id);
+    await loadImageAndPoints();
+    say('Image uploaded. Add control points and save the calibration.', 'info');
+  } catch (e) {
+    say('Upload failed: ' + errText(e) +
+        '. Attachment upload from a widget needs a recent Grist, full access, and generally ' +
+        'document owner rights.', 'err');
+  } finally {
+    $('#upload').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
