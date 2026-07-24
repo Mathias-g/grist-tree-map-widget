@@ -10,18 +10,61 @@
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 
 <style>
+  /* Light is the default. JS adds .dark to <html> based on the resolved
+     appearance: OS preference, or an explicit override saved per widget. */
   :root {
-    --ink:      #1c2321;
-    --paper:    #f7f6f2;
-    --line:     #d8d5cc;
-    --muted:    #6b6f6c;
-    --plant:     #2f6f4e;
-    --calib:    #b3591a;
-    --sel:      #1a4d8f;
-    --bad:      #a32b2b;
+    --ink:        #1c2321;
+    --paper:      #f7f6f2;
+    --surface:    #ffffff;
+    --surface-2:  #f0efe9;
+    --panel:      #fffdf8;
+    --mapbg:      #e9e7e0;
+    --line:       #d8d5cc;
+    --hairline:   #eceae3;
+    --muted:      #6b6f6c;
+    --plant:      #2f6f4e;
+    --calib:      #b3591a;
+    --sel:        #1a4d8f;
+    --bad:        #a32b2b;
+    --pin-ring:   #ffffff;
+    --info-bg:    #eef4f0;
+    --warn-bg:    #fdf3e9;
+    --err-bg:     #fbeded;
+    --tray-line:  #9a9d99;
+    --tray-fill:  #000000;
+    --tray-alpha: 0.045;
+    --tip-bg:     rgba(28,35,33,.86);
+    --tip-fg:     #ffffff;
+    --rm-hover:   #fff8f2;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
     --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
+  html.dark {
+    --ink:        #e4e2dc;
+    --paper:      #1f2422;
+    --surface:    #272d2b;
+    --surface-2:  #313836;
+    --panel:      #2a2724;
+    --mapbg:      #191d1c;
+    --line:       #3c4240;
+    --hairline:   #343a38;
+    --muted:      #9aa19d;
+    --plant:      #55b183;
+    --calib:      #e29450;
+    --sel:        #6aa5e8;
+    --bad:        #e07b7b;
+    --pin-ring:   #1f2422;
+    --info-bg:    #1f2f27;
+    --warn-bg:    #332619;
+    --err-bg:     #33201f;
+    --tray-line:  #5c6462;
+    --tray-fill:  #ffffff;
+    --tray-alpha: 0.05;
+    --tip-bg:     rgba(238,238,232,.92);
+    --tip-fg:     #1c2321;
+    --rm-hover:   #3a2c1f;
+  }
+
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%;
@@ -42,9 +85,9 @@
     border-bottom: 1px solid var(--line);
   }
   #banner.show { display: block; }
-  #banner.info { background: #eef4f0; color: var(--plant); }
-  #banner.warn { background: #fdf3e9; color: var(--calib); }
-  #banner.err  { background: #fbeded; color: var(--bad); }
+  #banner.info { background: var(--info-bg); color: var(--plant); }
+  #banner.warn { background: var(--warn-bg); color: var(--calib); }
+  #banner.err  { background: var(--err-bg);  color: var(--bad); }
   #banner b { font-weight: 600; }
   #banner .x { float: right; cursor: pointer; opacity: .6; padding-left: 10px; }
   #banner .x:hover { opacity: 1; }
@@ -53,18 +96,18 @@
   #bar {
     display: flex; align-items: center; gap: 14px;
     padding: 7px 12px; border-bottom: 1px solid var(--line);
-    background: #fff; flex: 0 0 auto;
+    background: var(--surface); flex: 0 0 auto;
   }
   .modes { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
   .modes button {
     font: 500 12px/1 var(--sans); padding: 7px 13px;
     border: 0; border-right: 1px solid var(--line);
-    background: #fff; color: var(--muted); cursor: pointer;
+    background: var(--surface); color: var(--muted); cursor: pointer;
   }
   .modes button:last-child { border-right: 0; }
-  .modes button:hover { background: #f0efe9; color: var(--ink); }
-  .modes button[aria-pressed="true"] { background: var(--ink); color: #fff; }
-  .modes button[aria-pressed="true"][data-mode="calibrate"] { background: var(--calib); }
+  .modes button:hover { background: var(--surface-2); color: var(--ink); }
+  .modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .modes button[aria-pressed="true"][data-mode="calibrate"] { background: var(--calib); color: #fff; }
   .modes button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
   .modes button[disabled] { opacity: .4; cursor: not-allowed; }
 
@@ -72,17 +115,35 @@
   #scale { font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
 
   /* ---- map ---- */
-  #map { flex: 1 1 auto; background: #e9e7e0; min-height: 140px; }
-  .leaflet-container { background: #e9e7e0; font-family: var(--sans); }
+  #map { flex: 1 1 auto; background: var(--mapbg); min-height: 140px; }
+  .leaflet-container { background: var(--mapbg); font-family: var(--sans); }
+  .leaflet-bar a, .leaflet-bar a:hover {
+    background: var(--surface); color: var(--ink); border-bottom-color: var(--line);
+  }
+  .leaflet-bar a:hover { background: var(--surface-2); }
+  .leaflet-bar { border-color: var(--line); }
+
   .pin {
     width: 14px; height: 14px; border-radius: 50%;
-    background: var(--plant); border: 2px solid #fff;
+    background: var(--plant); border: 2px solid var(--pin-ring);
     box-shadow: 0 0 0 1px rgba(0,0,0,.28);
   }
   .pin.is-selected { background: var(--sel); width: 18px; height: 18px; margin: -2px 0 0 -2px; }
   .pin.is-control  { background: var(--calib); border-radius: 2px; transform: rotate(45deg); }
+  .pin.is-unplaced {
+    background: var(--surface); border: 2px solid var(--muted);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+  }
+  .tray-label {
+    font: 600 10px/1.3 var(--sans); letter-spacing: .07em;
+    text-transform: uppercase; color: var(--muted); text-align: center; white-space: nowrap;
+  }
+  .tray-sub {
+    font: 400 10px/1.4 var(--sans); letter-spacing: 0;
+    text-transform: none; color: var(--muted); opacity: .85; margin-top: 2px;
+  }
   .leaflet-tooltip.lbl {
-    background: rgba(28,35,33,.86); border: 0; color: #fff;
+    background: var(--tip-bg); border: 0; color: var(--tip-fg);
     font: 500 11px/1.3 var(--sans); padding: 2px 6px; box-shadow: none;
   }
   .leaflet-tooltip.lbl::before { display: none; }
@@ -90,18 +151,18 @@
   /* ---- status ---- */
   #status {
     flex: 0 0 auto; display: flex; gap: 16px; align-items: baseline;
-    padding: 5px 12px; border-top: 1px solid var(--line); background: #fff;
+    padding: 5px 12px; border-top: 1px solid var(--line); background: var(--surface);
     font: 400 11px/1.5 var(--mono); color: var(--muted);
   }
-  #fit.good { color: var(--plant);  font-family: var(--sans); font-weight: 500; }
+  #fit.good { color: var(--plant); font-family: var(--sans); font-weight: 500; }
   #fit.poor { color: var(--calib); font-family: var(--sans); font-weight: 500; }
   #fit.none { color: var(--bad);   font-family: var(--sans); font-weight: 500; }
   #source { margin-left: auto; }
 
-  /* ---- calibration drawer ---- */
+  /* ---- calibration panel ---- */
   #calib {
     display: none; flex: 0 0 auto; max-height: 55%; overflow: auto;
-    border-top: 1px solid var(--line); background: #fffdf8; padding: 12px;
+    border-top: 1px solid var(--line); background: var(--panel); padding: 12px;
   }
   #calib.open { display: block; }
 
@@ -129,15 +190,15 @@
     text-transform: uppercase; color: var(--muted);
     padding: 0 8px 5px 0; border-bottom: 1px solid var(--line);
   }
-  td { padding: 6px 8px 6px 0; border-bottom: 1px solid #eceae3; vertical-align: middle; }
+  td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
   td.err-hi { color: var(--calib); font-weight: 600; }
 
   .btn {
     font: 500 12px/1 var(--sans); padding: 7px 12px;
     border: 1px solid var(--line); border-radius: 5px;
-    background: #fff; color: var(--ink); cursor: pointer;
+    background: var(--surface); color: var(--ink); cursor: pointer;
   }
-  .btn:hover:not([disabled]) { background: #f0efe9; }
+  .btn:hover:not([disabled]) { background: var(--surface-2); }
   .btn:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
   .btn[disabled] { opacity: .45; cursor: not-allowed; }
   .btn.primary { background: var(--calib); border-color: var(--calib); color: #fff; }
@@ -146,21 +207,23 @@
   .rm {
     font: 500 11px/1 var(--sans); padding: 5px 9px;
     border: 1px solid var(--line); border-radius: 4px;
-    background: #fff; color: var(--muted); cursor: pointer;
+    background: var(--surface); color: var(--muted); cursor: pointer;
   }
-  .rm:hover { border-color: var(--calib); color: var(--calib); background: #fff8f2; }
+  .rm:hover { border-color: var(--calib); color: var(--calib); background: var(--rm-hover); }
   .rm:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
 
   input[type=text], select {
     font: 400 12px/1 var(--sans); padding: 6px 8px;
-    border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px;
+    background: var(--surface); color: var(--ink);
   }
   input[type=text] { min-width: 200px; }
+  input[type=file] { color: var(--ink); font: 400 12px/1.4 var(--sans); max-width: 100%; }
 
   #out {
     width: 100%; margin-top: 8px; min-height: 84px; padding: 8px;
     font: 400 11px/1.5 var(--mono); color: var(--ink);
-    border: 1px solid var(--line); border-radius: 5px; background: #fff; resize: vertical;
+    border: 1px solid var(--line); border-radius: 5px; background: var(--surface); resize: vertical;
   }
   .note { font-size: 11px; color: var(--muted); }
   .note.dirty { color: var(--calib); font-weight: 500; }
@@ -208,6 +271,19 @@
         <label class="note" for="mapname">Map name</label>
         <input type="text" id="mapname" placeholder="e.g. North plot">
         <button class="btn" id="rename" disabled>Save name</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Appearance</h2>
+      <div class="row">
+        <select id="appearance">
+          <option value="system">Match the system</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+        <span class="note">Grist's own theme isn't readable from inside a widget,
+          so this follows your operating system unless you override it.</span>
       </div>
     </div>
 
@@ -375,7 +451,8 @@ let transform = null;
 let mode = 'select';
 let records = [];
 let markers = new Map();
-let cpLayer, selectedId = null;
+let cpLayer, trayLayer, selectedId = null;
+let trayShown = false;
 
 let needsFit = false;       // true until the map has been fitted at a real size
 let boundTable = null;      // table id this widget is bound to
@@ -387,6 +464,33 @@ let controlPoints = [];
 let savedSignature = '';    // for dirty tracking
 
 const $ = s => document.querySelector(s);
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---- appearance ----
+   Grist keeps its theme variables on the top-level document, out of reach of a
+   cross-origin iframe, so the widget follows the operating system by default and
+   accepts an override stored per widget instance. */
+let appearance = 'system';           // system | light | dark
+const darkMq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+function applyAppearance() {
+  const dark = appearance === 'dark' || (appearance === 'system' && darkMq && darkMq.matches);
+  document.documentElement.classList.toggle('dark', dark);
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  drawPlants();                       // the strip is drawn with canvas colours, not CSS
+}
+
+if (darkMq) {
+  const onChange = () => { if (appearance === 'system') applyAppearance(); };
+  darkMq.addEventListener ? darkMq.addEventListener('change', onChange)
+                          : darkMq.addListener(onChange);
+}
+
+$('#appearance').addEventListener('change', async e => {
+  appearance = e.target.value;
+  applyAppearance();
+  try { await grist.widgetApi.setOption('appearance', appearance); } catch {}
+});
 const geoMode = () => coordinateMode === 'geo';
 const toLL   = (px, py) => L.latLng(-py, px);
 const fromLL = ll => ({ px: ll.lng, py: -ll.lat });
@@ -503,6 +607,12 @@ async function loadMapRow(preferId) {
     say('Could not determine which table this widget is bound to. ' +
         'Falling back to the saved map row. ' + errText(e), 'warn');
   }
+
+  try {
+    const saved = await grist.widgetApi.getOption('appearance');
+    if (saved) { appearance = saved; $('#appearance').value = saved; }
+  } catch { /* options unavailable, stay on system */ }
+  applyAppearance();
 
   await loadMapRow();
   await loadImageAndPoints();
@@ -624,11 +734,13 @@ function initMap(url) {
     crs: L.CRS.Simple, minZoom: -6, maxZoom: 6, zoomSnap: 0.25, attributionControl: false
   });
   L.imageOverlay(url, bounds).addTo(map);
-  map.setMaxBounds(L.latLngBounds(bounds).pad(0.4));
+  map.setMaxBounds(L.latLngBounds([[-imgH, trayLeftX() - 20], [0, imgW]]).pad(0.4));
   needsFit = true;
   fitIfSized();
   observeMapSize();
-  cpLayer = L.layerGroup().addTo(map);
+  cpLayer   = L.layerGroup().addTo(map);
+  trayLayer = L.layerGroup().addTo(map);
+  trayShown = false;
 
   map.on('click', onMapClick);
   map.on('mousemove', e => {
@@ -661,7 +773,8 @@ function fitIfSized() {
   if (!map || !needsFit || !imgW || !imgH) return;
   const el = $('#map');
   if (el.clientWidth < 40 || el.clientHeight < 40) return;   // not laid out yet
-  map.fitBounds([[-imgH, 0], [0, imgW]]);
+  const x0 = (trayLayer && trayLayer.getLayers().length) ? trayLeftX() - 10 : 0;
+  map.fitBounds([[-imgH, x0], [0, imgW]]);
   needsFit = false;
 }
 
@@ -731,43 +844,120 @@ function readPixel(rec) {
   return transform ? transform.toPixel(a, b) : null;
 }
 
+/* ---- the unplaced strip ----
+   Plants that cannot be shown on the current image still get a pin, in a labelled
+   strip to the left of the photo. Drag one onto the photo to place it; that writes
+   coordinates through the same path as moving any other plant. Nothing is written
+   until the user drags, and dropping back into the strip writes nothing. */
+const TRAY_GAP = 26;   // gap between photo and strip, in image pixels
+const TRAY_W   = 96;
+const trayLeftX   = () => -(TRAY_GAP + TRAY_W);
+const trayCentreX = () => -(TRAY_GAP + TRAY_W / 2);
+
+// null reason means the plant sits on (or acceptably near) the image
+function classify(rec) {
+  const p = readPixel(rec);
+  if (!p) return { p: null, reason: 'no coordinates' };
+  const far = p.px < -imgW || p.px > imgW * 2 || p.py < -imgH || p.py > imgH * 2;
+  return { p, reason: far ? 'outside this image' : null };
+}
+
+function addPlantMarker(rec, latlng, reason) {
+  const mk = L.marker(latlng, {
+    icon: L.divIcon({
+      className: '',
+      html: '<div class="pin' + (reason ? ' is-unplaced' : '') + '"></div>',
+      iconSize: [14, 14], iconAnchor: [7, 7]
+    }),
+    draggable: reason ? true : (mode === 'move'),
+    keyboard: true
+  }).addTo(map);
+
+  const name = CONFIG.cols.label ? rec[CONFIG.cols.label] : null;
+  const tip  = (name ? String(name) : 'Row ' + rec.id) + (reason ? ' \u2014 ' + reason : '');
+  mk.bindTooltip(tip, {
+    className: 'lbl',
+    direction: reason ? 'right' : 'top',
+    offset: reason ? [8, 0] : [0, -8]
+  });
+
+  mk.on('click', ev => { L.DomEvent.stopPropagation(ev); grist.setCursorPos({ rowId: rec.id }); });
+
+  mk.on('dragend', async ev => {
+    const q = fromLL(ev.target.getLatLng());
+    if (q.px < 0) { drawPlants(); return; }        // dropped back into the strip
+    const c = writeCoords(q.px, q.py);
+    if (!c) { drawPlants(); return; }
+    try {
+      await grist.selectedTable.update({
+        id: rec.id, fields: { [CONFIG.cols.lat]: c.a, [CONFIG.cols.lng]: c.b }
+      });
+    } catch (err) {
+      say('Could not move that plant: ' + errText(err), 'err');
+      drawPlants();
+    }
+  });
+
+  markers.set(rec.id, mk);
+  return mk;
+}
+
+function drawTray(items) {
+  L.rectangle([[-imgH, trayLeftX()], [0, -TRAY_GAP]], {
+    color: cssVar('--tray-line') || '#9a9d99', weight: 1, dashArray: '4 3',
+    fill: true, fillColor: cssVar('--tray-fill') || '#000',
+    fillOpacity: parseFloat(cssVar('--tray-alpha')) || 0.045, interactive: false
+  }).addTo(trayLayer);
+
+  L.marker(L.latLng(-14, trayCentreX()), {
+    interactive: false,
+    icon: L.divIcon({
+      className: '',
+      html: '<div class="tray-label">Unplaced (' + items.length + ')' +
+            '<div class="tray-sub">drag onto<br>the photo</div></div>',
+      iconSize: [TRAY_W, 44], iconAnchor: [TRAY_W / 2, 0]
+    })
+  }).addTo(trayLayer);
+
+  const top = 74, bottom = Math.max(top + 40, imgH - 18);
+  const usable = bottom - top;
+  const step   = Math.min(34, usable / Math.max(1, items.length));
+  const first  = top + (usable - step * (items.length - 1)) / 2;
+  items.forEach((it, i) =>
+    addPlantMarker(it.rec, L.latLng(-(first + i * step), trayCentreX()), it.reason));
+}
+
 function drawPlants() {
   if (!map) return;
   markers.forEach(m => map.removeLayer(m));
   markers.clear();
-  let placed = 0;
+  if (trayLayer) trayLayer.clearLayers();
 
-  for (const rec of records) {
-    const p = readPixel(rec);
-    if (!p) continue;
-    placed++;
+  // With no transform at all nothing can be positioned, and a strip holding every
+  // plant would just repeat what the "Not calibrated" message already says.
+  const noTransform = geoMode() && !transform;
+  const onMap = [], unplaced = [];
 
-    const mk = L.marker(toLL(p.px, p.py), {
-      icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [14,14], iconAnchor: [7,7] }),
-      draggable: mode === 'move', keyboard: true
-    }).addTo(map);
-
-    const name = CONFIG.cols.label ? rec[CONFIG.cols.label] : null;
-    if (name) mk.bindTooltip(String(name), { className: 'lbl', direction: 'top', offset: [0,-8] });
-
-    mk.on('click', ev => { L.DomEvent.stopPropagation(ev); grist.setCursorPos({ rowId: rec.id }); });
-    mk.on('dragend', async ev => {
-      const q = fromLL(ev.target.getLatLng());
-      const c = writeCoords(q.px, q.py);
-      if (!c) return;
-      try {
-        await grist.selectedTable.update({
-          id: rec.id, fields: { [CONFIG.cols.lat]: c.a, [CONFIG.cols.lng]: c.b }
-        });
-      } catch (err) { say('Could not move that plant: ' + errText(err), 'err'); }
-    });
-
-    markers.set(rec.id, mk);
+  if (!noTransform) {
+    for (const rec of records) {
+      const c = classify(rec);
+      if (c.reason) unplaced.push({ rec, reason: c.reason });
+      else onMap.push({ rec, p: c.p });
+    }
   }
 
-  const missing = records.length - placed;
-  $('#count').textContent = placed + ' of ' + records.length + ' placed' +
-    (missing ? '  \u00b7  ' + missing + ' without coordinates' : '');
+  for (const it of onMap) addPlantMarker(it.rec, toLL(it.p.px, it.p.py), null);
+  if (unplaced.length) drawTray(unplaced);
+
+  // Re-fit when the strip first appears, so it cannot be sitting off-screen.
+  if (unplaced.length && !trayShown) { trayShown = true; needsFit = true; fitIfSized(); }
+  if (!unplaced.length) trayShown = false;
+
+  $('#count').textContent = noTransform
+    ? records.length + (records.length === 1 ? ' plant' : ' plants')
+    : onMap.length + ' of ' + records.length + ' on the map' +
+      (unplaced.length ? '  \u00b7  ' + unplaced.length + ' unplaced' : '');
+
   restylePlants();
 }
 
