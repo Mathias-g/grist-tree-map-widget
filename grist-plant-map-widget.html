@@ -28,7 +28,12 @@
     font-family: var(--sans); color: var(--ink); background: var(--paper);
     -webkit-font-smoothing: antialiased;
   }
-  #app { display: flex; flex-direction: column; height: 100%; }
+  #app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+  /* Map and panel sit side by side when there is width to spare,
+     stacked when there isn't. In an iframe, media queries measure the widget. */
+  #shell   { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  #mapwrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 
   /* ---- banner ---- */
   #banner {
@@ -67,7 +72,7 @@
   #scale { font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
 
   /* ---- map ---- */
-  #map { flex: 1 1 auto; background: #e9e7e0; min-height: 120px; }
+  #map { flex: 1 1 auto; background: #e9e7e0; min-height: 140px; }
   .leaflet-container { background: #e9e7e0; font-family: var(--sans); }
   .pin {
     width: 14px; height: 14px; border-radius: 50%;
@@ -95,19 +100,29 @@
 
   /* ---- calibration drawer ---- */
   #calib {
-    display: none; flex: 0 0 auto; max-height: 52%; overflow: auto;
+    display: none; flex: 0 0 auto; max-height: 55%; overflow: auto;
     border-top: 1px solid var(--line); background: #fffdf8; padding: 12px;
   }
   #calib.open { display: block; }
-  .sec { margin-bottom: 18px; }
+
+  @media (min-width: 760px) {
+    #shell { flex-direction: row; }
+    #calib {
+      flex: 0 0 360px; width: 360px; max-height: none; height: auto;
+      border-top: 0; border-left: 1px solid var(--line);
+    }
+  }
+
+  .sec { margin-bottom: 15px; }
   .sec:last-child { margin-bottom: 0; }
   .sec > h2 {
     margin: 0 0 8px; font: 600 11px/1 var(--sans);
     letter-spacing: .06em; text-transform: uppercase; color: var(--calib);
   }
-  .sec p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); max-width: 64ch; }
+  .sec p { margin: 0 0 9px; font-size: 11.5px; line-height: 1.5; color: var(--muted); max-width: 62ch; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+  .tablewrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font: 400 11px/1 var(--mono); }
   th {
     text-align: left; font: 500 10px/1 var(--sans); letter-spacing: .05em;
@@ -168,6 +183,8 @@
     <div id="scale"></div>
   </div>
 
+  <div id="shell">
+  <div id="mapwrap">
   <div id="map"></div>
 
   <div id="status">
@@ -176,6 +193,7 @@
     <span id="count"></span>
     <span id="source"></span>
   </div>
+  </div><!-- /mapwrap -->
 
   <div id="calib">
 
@@ -212,12 +230,14 @@
         the edges of the plot fit better. Corners of buildings and fences are good targets; tree
         canopies are not, because they lean away from the camera.
       </p>
+      <div class="tablewrap">
       <table>
         <thead>
-          <tr><th>#</th><th>Image x, y</th><th>Latitude</th><th>Longitude</th><th>Error</th><th>Action</th></tr>
+          <tr><th>#</th><th>x, y</th><th>Latitude</th><th>Longitude</th><th>Error</th><th>Action</th></tr>
         </thead>
         <tbody id="cp-rows"></tbody>
       </table>
+      </div>
 
       <textarea id="out" spellcheck="false"
         placeholder="Paste control points here and press Apply. Accepts the CONTROL_POINTS block, plain JSON, or four numbers per line."></textarea>
@@ -237,7 +257,8 @@
       </div>
     </div>
 
-  </div>
+  </div><!-- /calib -->
+  </div><!-- /shell -->
 </div>
 
 <script>
@@ -356,6 +377,7 @@ let records = [];
 let markers = new Map();
 let cpLayer, selectedId = null;
 
+let needsFit = false;       // true until the map has been fitted at a real size
 let boundTable = null;      // table id this widget is bound to
 let mapRow = null;          // record from Map_images, or null
 let attachmentId = 0;       // 0 = placeholder
@@ -596,13 +618,16 @@ function resolveControlPoints() {
    ============================================================ */
 function initMap(url) {
   if (map) { map.remove(); map = null; markers.clear(); }
+  if (mapObserver) { mapObserver.disconnect(); mapObserver = null; }
   const bounds = [[-imgH, 0], [0, imgW]];
   map = L.map('map', {
     crs: L.CRS.Simple, minZoom: -6, maxZoom: 6, zoomSnap: 0.25, attributionControl: false
   });
   L.imageOverlay(url, bounds).addTo(map);
-  map.fitBounds(bounds);
   map.setMaxBounds(L.latLngBounds(bounds).pad(0.4));
+  needsFit = true;
+  fitIfSized();
+  observeMapSize();
   cpLayer = L.layerGroup().addTo(map);
 
   map.on('click', onMapClick);
@@ -618,6 +643,34 @@ function initMap(url) {
   });
   drawPlants();
 }
+
+// Leaflet caches the container size, so it has to be told when the drawer opens,
+// the widget pane is resized, or the layout flips between sidebar and drawer.
+let mapObserver = null;
+function observeMapSize() {
+  if (mapObserver || typeof ResizeObserver === 'undefined') return;
+  mapObserver = new ResizeObserver(() => {
+    if (!map) return;
+    map.invalidateSize({ animate: false });
+    fitIfSized();
+  });
+  mapObserver.observe($('#map'));
+}
+
+function fitIfSized() {
+  if (!map || !needsFit || !imgW || !imgH) return;
+  const el = $('#map');
+  if (el.clientWidth < 40 || el.clientHeight < 40) return;   // not laid out yet
+  map.fitBounds([[-imgH, 0], [0, imgW]]);
+  needsFit = false;
+}
+
+// Re-fit when the user asks, rather than fighting them over zoom on every resize.
+window.addEventListener('keydown', e => {
+  if (e.key === 'f' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    needsFit = true; fitIfSized();
+  }
+});
 
 const HINTS = {
   select:    'Click a plant to select its row in Grist.',
@@ -637,6 +690,7 @@ function setMode(m) {
   $('#calib').classList.toggle('open', m === 'calibrate');
   markers.forEach(mk => mk.dragging && (m === 'move' ? mk.dragging.enable() : mk.dragging.disable()));
   drawControlPoints();
+  if (map) requestAnimationFrame(() => map.invalidateSize({ animate: false }));
 }
 
 async function onMapClick(e) {
@@ -929,6 +983,30 @@ $('#rename').addEventListener('click', async () => {
 });
 
 /* ---- upload ---- */
+// Reverse proxies commonly cap request bodies at 1 MB, and attachment images are
+// refetched on every widget load, so shrink before sending. 4000 px across a 45 m
+// plot is about 1.1 cm/px, finer than the drone gives at 50 m.
+const MAX_EDGE_PX = 4000;
+const JPEG_QUALITY = 0.85;
+
+async function downscale(file) {
+  if (!/^image\//.test(file.type)) return file;
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch { return file; }                     // exotic format, send as-is
+  const scale = Math.min(1, MAX_EDGE_PX / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && file.size < 3e6) return file;
+  const c = document.createElement('canvas');
+  c.width  = Math.round(bmp.width  * scale);
+  c.height = Math.round(bmp.height * scale);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', JPEG_QUALITY));
+  if (!blob) return file;
+  return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
+
+const mb = n => (n / 1048576).toFixed(1) + ' MB';
+
 $('#upload').addEventListener('click', async () => {
   const file = $('#file').files[0];
   if (!file) { say('Choose an image file first.', 'warn'); return; }
@@ -939,12 +1017,23 @@ $('#upload').addEventListener('click', async () => {
                'pixels in the old one. Continue?')) return;
 
   $('#upload').disabled = true;
-  say('Uploading\u2026', 'info');
+  say('Preparing image\u2026', 'info');
 
   try {
+    const up = await downscale(file);
+    if (up !== file) {
+      say('Resized from ' + mb(file.size) + ' to ' + mb(up.size) + ', uploading\u2026', 'info');
+    } else if (up.size > 1048576) {
+      say('Uploading ' + mb(up.size) +
+          '. If this fails, the server in front of Grist is probably capping uploads ' +
+          '(nginx defaults to 1 MB via client_max_body_size).', 'warn');
+    } else {
+      say('Uploading\u2026', 'info');
+    }
+
     const tok = await grist.docApi.getAccessToken({ readOnly: false });
     const fd = new FormData();
-    fd.append('upload', file, file.name);
+    fd.append('upload', up, up.name);
     const res = await fetch(tok.baseUrl + '/attachments?auth=' + tok.token, {
       method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
     });
@@ -973,8 +1062,11 @@ $('#upload').addEventListener('click', async () => {
     say('Image uploaded. Add control points and save the calibration.', 'info');
   } catch (e) {
     say('Upload failed: ' + errText(e) +
-        '. Attachment upload from a widget needs a recent Grist, full access, and generally ' +
-        'document owner rights.', 'err');
+        '. A network or CORS error here usually means the server rejected the request for ' +
+        'size before Grist saw it: the rejection carries no CORS headers, so the browser ' +
+        'reports a CORS problem instead of 413. Raise <code>client_max_body_size</code> on ' +
+        'the proxy in front of Grist. Failing that, check the widget has Full access and ' +
+        'that your Grist is recent enough to allow widget uploads at all.', 'err');
   } finally {
     $('#upload').disabled = false;
   }
