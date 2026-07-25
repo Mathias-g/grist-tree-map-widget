@@ -25,8 +25,9 @@ and click a pin to jump to that row in Grist.
   pixels instead.
 **Working with plants**
  
-- **Select** – click a pin to move Grist's cursor to that row, so a linked card widget
-  shows its species, notes, planting date or whatever else you keep.
+- **Select** – click a pin to move Grist's cursor to that row. Any widget with its
+  **SELECT BY** set to the map follows, so a card beside it can show species, notes,
+  planting date or whatever else you keep.
 - **Place** – click the photo to create a new row with coordinates filled in.
 - **Move** – drag a pin to correct its position; the coordinates are written on release.
 - **Unplaced strip** – plants with no coordinates, or coordinates far outside the current
@@ -178,10 +179,29 @@ Press **Save calibration** when you're happy.
  
 ### 6. Place plants
  
-Switch to **Place** and click. Switch to **Move** to correct. Switch to **Select** and add
-a card widget next to the map to see each plant's details as you click around.
+Switch to **Place** and click the photo to add a plant. Switch to **Move** and drag a pin to
+correct one. Press `f` at any time to re-fit the view to the image.
  
-Press `f` at any time to re-fit the view to the image.
+### 7. Link the map to another widget
+ 
+Clicking a pin in **Select** mode moves the map's cursor, but nothing else on the page
+reacts to it until you say so. This is a one-time setting in Grist; the widget can't do it
+for you, and there's no error when it's missing — clicking a pin simply appears to do
+nothing.
+ 
+In almost all cases the widget you want is your **plants table**: it should follow the map,
+so that clicking a pin selects that plant's row.
+ 
+Click the plants table widget. Open the right panel using the green bar at the top right of
+the page, go to the **Data** tab, and set its **SELECT BY** to the map.
+ 
+Two widgets can't select each other, so a pair gives you one direction at a time. The first
+row below is the usual setup:
+ 
+| Set this                            | And this happens                                   |
+|-------------------------------------|----------------------------------------------------|
+| Plants table **selects by** the map | Clicking a pin selects that plant's row in the table |
+| Map **selects by** the plants table | Clicking a row in the table highlights its pin     |
  
 ---
  
@@ -305,6 +325,10 @@ If you can't change the server, downscaling already keeps most images under the 
 GitHub Pages caches HTML for about ten minutes and Grist's iframe caches on top of that.
 Hard reload with `Ctrl+Shift+R` first. If that doesn't do it, bump the version marker on
 the URL in Grist: `?v=2`, then `?v=3`.
+ 
+**Clicking a pin doesn't select the row.**
+Nothing is listening. A widget only follows the map if its **SELECT BY** is set to the map,
+in the Data section of the right-hand panel.
  
 **The widget says a column is missing but I can see it.**
 The label and the ID differ. Check the ID in the right-hand panel under the column name.
