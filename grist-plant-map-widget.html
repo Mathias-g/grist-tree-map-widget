@@ -29,6 +29,7 @@
     --accent-ink: #ffffff;
     --calib:      #b3591a;
     --calib-ink:  #ffffff;
+    --control:    #cc3b30;
     --sel:        #1a73e8;
     --bad:        #d93025;
     --pin-ring:   #ffffff;
@@ -59,6 +60,7 @@
     --accent-ink: #ffffff;
     --calib:      #e8a33d;
     --calib-ink:  #262633;
+    --control:    #ff6b6b;
     --sel:        #6aa5e8;
     --bad:        #ff6666;
     --pin-ring:   #262633;
@@ -106,7 +108,10 @@
     padding: 7px 12px; border-bottom: 1px solid var(--line);
     background: var(--surface); flex: 0 0 auto;
   }
-  .modes { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .modes {
+    display: flex; flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 5px; overflow: hidden;
+  }
   .modes button {
     font: 500 12px/1 var(--sans); padding: 7px 13px;
     border: 0; border-right: 1px solid var(--line);
@@ -115,14 +120,24 @@
   .modes button:last-child { border-right: 0; }
   .modes button:hover { background: var(--surface-2); color: var(--ink); }
   .modes button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
-  .modes button[aria-pressed="true"][data-mode="calibrate"] {
-    background: var(--calib); color: var(--calib-ink);
-  }
   .modes button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
   .modes button[disabled] { opacity: .4; cursor: not-allowed; }
 
-  #hint  { font-size: 12px; color: var(--muted); flex: 1 1 auto; }
+  #hint {
+    font-size: 12px; color: var(--muted);
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   #scale { font: 400 11px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+
+  /* Narrow widget: drop the prose, then the scale readout. The button labels say
+     what each mode does, and the calibration panel carries its own instructions. */
+  @media (max-width: 640px) { #hint  { display: none; } }
+  @media (max-width: 460px) {
+    #scale { display: none; }
+    .modes button { padding: 7px 9px; }
+    #bar { gap: 10px; padding: 7px 10px; }
+  }
 
   /* ---- map ---- */
   #map { flex: 1 1 auto; background: var(--mapbg); min-height: 140px; }
@@ -138,11 +153,17 @@
     background: var(--plant); border: 2px solid var(--pin-ring);
     box-shadow: 0 0 0 1px rgba(0,0,0,.28);
   }
-  .pin.is-selected { background: var(--sel); width: 18px; height: 18px; margin: -2px 0 0 -2px; }
-  .pin.is-control  { background: var(--calib); border-radius: 2px; transform: rotate(45deg); }
+  .pin.is-control  { background: var(--control); border-radius: 2px; transform: rotate(45deg); }
   .pin.is-unplaced {
     background: var(--surface); border: 2px solid var(--muted);
     box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+  }
+  /* Last, so it wins over .is-unplaced when an unplaced pin is the selected row. */
+  .pin.is-selected {
+    background: var(--calib);
+    width: 20px; height: 20px; margin: -3px 0 0 -3px;
+    border: 3px solid var(--pin-ring);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 7px 2px rgba(0,0,0,.4);
   }
   .tray-label {
     font: 600 10px/1.3 var(--sans); letter-spacing: .07em;
