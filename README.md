@@ -7,9 +7,6 @@ recognisable features are in the real world, and it works out the mapping betwee
 pixels and latitude/longitude. After that you can click to add a plant, drag to correct it,
 and click a pin to jump to that row in Grist.
 
-It's called a *plant* map rather than a tree map on purpose. Roses, hedges, beds and
-individual shrubs all work the same way.
-
 ---
 
 ## Features
