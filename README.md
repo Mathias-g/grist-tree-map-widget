@@ -7,7 +7,7 @@ recognisable features are in the real world, and it works out the mapping betwee
 pixels and latitude/longitude. After that you can click to add a plant, drag to correct it,
 and click a pin to jump to that row in Grist.
 
-<img width="1301" height="895" alt="image" src="https://github.com/user-attachments/assets/8fe1acbb-83a3-463e-b09b-b70244aeaecd" />
+<img width="622" height="525" alt="image" src="https://github.com/user-attachments/assets/09b48248-68dc-4ec5-9222-9f3139d83f77" />
 
 ---
 
@@ -178,8 +178,7 @@ Press **Save calibration** when you're happy.
 > Existing plants keep whatever coordinates they were given. Recalibrating does not move
 > them. Get the calibration right before you start placing plants.
 
-<img width="1301" height="895" alt="image" src="https://github.com/user-attachments/assets/809fba1b-f16a-49f3-abab-ea1adc4df47f" />
-
+<img width="1283" height="1017" alt="image" src="https://github.com/user-attachments/assets/8b4a6a09-670f-427c-9966-5384a61f1e5c" />
  
 ### 6. Place plants
  
@@ -207,8 +206,7 @@ row below is the usual setup:
 | Plants table **selects by** the map | Clicking a pin selects that plant's row in the table |
 | Map **selects by** the plants table | Clicking a row in the table highlights its pin     |
 
-<img width="1331" height="1022" alt="image" src="https://github.com/user-attachments/assets/41daeea5-6c20-433f-91e1-ac9df35b1154" />
-
+<img width="1351" height="1041" alt="image" src="https://github.com/user-attachments/assets/cfc339af-811f-4be5-8f88-0af7d5637753" />
  
 ---
  
