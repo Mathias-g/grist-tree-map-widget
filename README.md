@@ -92,8 +92,8 @@ Add a widget to your page, choose **Custom**, then pick **Custom URL**.
  
 Now choose one of the two options below.
  
-<details open>
-<summary><strong>Option A — use the hosted build (quickest)</strong></summary>
+#### Option A — use the hosted build (quickest)
+ 
 Paste this URL:
  
 ```
@@ -106,9 +106,8 @@ Grist document, not on the host.
 If a later version doesn't appear after an update, add a version marker to bust the cache:
 `...grist-plant-map-widget.html?v=2`, then `?v=3` next time.
  
-</details>
-<details>
-<summary><strong>Option B — host your own copy (fork it)</strong></summary>
+#### Option B — host your own copy (fork it)
+ 
 Worth doing if you want to change the defaults, pin a version, or keep everything under
 your own control.
  
@@ -118,7 +117,7 @@ your own control.
    **Source** to *Deploy from a branch*, **Branch** to `main`, folder `/ (root)`, and save.
 3. Wait a minute, then refresh. Your URL appears at the top of the page:
 ```
-   https://<your-username>.github.io/<repo-name>/grist-plant-map-widget.html
+   https://YOUR-USERNAME.github.io/YOUR-REPO/grist-plant-map-widget.html
 ```
  
    HTTPS is automatic on `github.io`, which is what Grist requires.
@@ -131,8 +130,6 @@ Rename the file to `index.html` if you'd rather have a shorter URL ending in a s
 Keep `plot.jpg` alongside the HTML. It's the placeholder shown before you upload a real
 image, and it's what the demo control points refer to.
  
-</details>
-
 ### 3. Grant access
  
 In the widget's right-hand panel, set **Access level** to **Full document access**.
@@ -205,6 +202,15 @@ row below is the usual setup:
 |-------------------------------------|----------------------------------------------------|
 | Plants table **selects by** the map | Clicking a pin selects that plant's row in the table |
 | Map **selects by** the plants table | Clicking a row in the table highlights its pin     |
+ 
+If the map isn't offered in the dropdown, the other link is already in place. Clear that
+widget's own SELECT BY first and the option appears.
+ 
+To get both behaviours, chain a third widget rather than linking the pair in both
+directions: leave the map selecting by the plants table, then add a card widget on the same
+table and set its SELECT BY to the map. Clicking a row drives the map, and clicking a pin
+drives the card. The table's own cursor still won't follow a pin, but the card shows you
+what you clicked.
 
 <img width="1351" height="1041" alt="image" src="https://github.com/user-attachments/assets/cfc339af-811f-4be5-8f88-0af7d5637753" />
  
@@ -269,6 +275,10 @@ Each widget looks up its own row by the table it's bound to, so the maps are ful
 independent: different photos, different calibrations, and one can be in pixel mode while
 another uses real coordinates.
  
+Duplicating a page or a widget copies its settings, but the copy still finds its row by the
+table it's bound to, so it starts from the placeholder image and needs its own upload and
+calibration. It won't touch the original's map.
+ 
 Two consequences worth knowing. A plants table can only have one map, so pointing two
 widgets at the same table gives them both the same image. And deleting a row from
 `Map_images` makes its widget fall back to the placeholder image, as though it had just
@@ -331,6 +341,11 @@ GitHub Pages caches HTML for about ten minutes and Grist's iframe caches on top 
 Hard reload with `Ctrl+Shift+R` first. If that doesn't do it, bump the version marker on
 the URL in Grist: `?v=2`, then `?v=3`.
  
+**I renamed my plants table and the map went back to the placeholder.**
+Grist derives a table's id from its name, so renaming a table changes the id the map row
+was pointing at. The widget notices and offers to reconnect the stranded row. Accept that
+rather than uploading the image again, or you'll end up with two rows.
+ 
 **Clicking a pin doesn't select the row.**
 Nothing is listening. A widget only follows the map if its **SELECT BY** is set to the map,
 in the Data section of the right-hand panel.
@@ -351,6 +366,9 @@ onto the map, or clear their coordinates and place them again.
   truth, so a bad initial calibration is not something you can undo later.
 - Grist's own theme isn't readable from inside a widget iframe, so light/dark follows your
   operating system unless you override it in the widget.
+- Map rows are matched to plants tables by table id, and Grist derives that id from the
+  table's name. Renaming a plants table breaks the link; the widget detects the stranded
+  row and offers to reconnect it, but the association isn't rename-proof.
 - The `Map_images` table isn't the widget's selected table, so there's no change
   subscription for it. Editing calibration directly in the table shows up on next reload.
 - Attachment images are re-fetched on every widget load, since the download URL carries a
