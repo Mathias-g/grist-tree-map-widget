@@ -601,6 +601,13 @@ async function loadMapRow(preferId) {
     say('Could not initialise the Grist API: ' + errText(e), 'err');
   }
 
+  // Subscribe before anything is awaited. Grist pushes the initial record set as
+  // soon as the widget reports ready, and a subscription registered after that
+  // push never receives it: the widget would sit empty until the next edit.
+  // drawPlants is a no-op until the map exists, so early calls are harmless.
+  grist.onRecords(recs => { records = recs || []; drawPlants(); });
+  grist.onRecord(rec => { selectedId = rec ? rec.id : null; restylePlants(); });
+
   try { boundTable = await grist.getTable().getTableId(); }
   catch (e) {
     boundTable = null;
@@ -617,10 +624,20 @@ async function loadMapRow(preferId) {
   await loadMapRow();
   await loadImageAndPoints();
   checkPlantColumns();
-
-  grist.onRecords(recs => { records = recs || []; drawPlants(); });
-  grist.onRecord(rec => { selectedId = rec ? rec.id : null; restylePlants(); });
+  await seedRecordsIfEmpty();
 })();
+
+// Belt and braces: if the subscription still delivered nothing by the time the map
+// is up, read the table once directly rather than waiting for an edit.
+async function seedRecordsIfEmpty() {
+  if (records.length) return;
+  try {
+    records = toRecords(await grist.docApi.fetchSelectedTable());
+    drawPlants();
+  } catch (e) {
+    say('Could not read the plants in this table: ' + errText(e), 'err');
+  }
+}
 
 async function checkPlantColumns() {
   let data;
