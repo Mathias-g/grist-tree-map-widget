@@ -155,6 +155,8 @@
   }
   .leaflet-bar a:hover { background: var(--surface-2); }
   .leaflet-bar { border-color: var(--line); }
+  .fit-btn { display: flex; align-items: center; justify-content: center; }
+  .fit-btn svg { display: block; }
 
   .pin {
     width: 14px; height: 14px; border-radius: 50%;
@@ -856,6 +858,27 @@ function initMap(url) {
   needsFit = true;
   fitIfSized();
   observeMapSize();
+  // Sits under the zoom control, same styling, does what the f key does.
+  map.addControl(new (L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd() {
+      const box = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+      const a = L.DomUtil.create('a', 'fit-btn', box);
+      a.href = '#';
+      a.title = 'Fit the whole image (f)';
+      a.setAttribute('role', 'button');
+      a.setAttribute('aria-label', 'Fit the whole image');
+      a.innerHTML =
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>';
+      L.DomEvent.disableClickPropagation(box);
+      L.DomEvent.on(a, 'click', L.DomEvent.stop);
+      L.DomEvent.on(a, 'click', () => { needsFit = true; fitIfSized(); });
+      return box;
+    }
+  }))());
+
   cpLayer   = L.layerGroup().addTo(map);
   trayLayer = L.layerGroup().addTo(map);
   trayShown = false;
