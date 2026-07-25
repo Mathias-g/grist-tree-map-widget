@@ -924,6 +924,7 @@ function addPlantMarker(rec, latlng, reason) {
       iconSize: [14, 14], iconAnchor: [7, 7]
     }),
     draggable: reason ? true : (mode === 'move'),
+    riseOnHover: true,     // lets you get at a pin buried under its neighbours
     keyboard: true
   }).addTo(map);
 
@@ -1017,8 +1018,12 @@ function drawPlants() {
 
 function restylePlants() {
   markers.forEach((mk, id) => {
+    const sel = id === selectedId;
     const el = mk.getElement() && mk.getElement().firstChild;
-    if (el) el.classList.toggle('is-selected', id === selectedId);
+    if (el) el.classList.toggle('is-selected', sel);
+    // Leaflet stacks markers by latitude, which ignores selection. Lift the
+    // selected one clear of everything, including anything raised by hover.
+    mk.setZIndexOffset(sel ? 1000 : 0);
   });
 }
 
