@@ -496,6 +496,7 @@ let trayShown = false;
 let needsFit = false;       // true until the map has been fitted at a real size
 let boundTable = null;      // table id this widget is bound to
 let mapRow = null;          // record from Map_images, or null
+let orphanRows = [];        // rows pointing at tables that no longer exist
 let attachmentId = 0;       // 0 = placeholder
 let usingPlaceholder = true;
 let coordinateMode = 'geo';
@@ -592,6 +593,14 @@ async function ensureMapTable() {
 }
 
 async function ensureMapRow() {
+  if (mapRow && boundTable) {
+    const owner = mapRow[MC.trees];
+    if (owner && owner !== boundTable) {
+      say('This map row belongs to <b>' + owner + '</b>, not to this table. Nothing was ' +
+          'written. Clear the <b>' + MC.trees + '</b> cell if you meant to reassign it.', 'err');
+      return null;
+    }
+  }
   if (mapRow) return mapRow;
   if (!(await ensureMapTable())) return null;
   try {
@@ -613,21 +622,67 @@ async function ensureMapRow() {
 
 async function loadMapRow(preferId) {
   mapRow = null;
-  if (!(await mapTableExists())) return;
+  orphanRows = [];
+
+  let tables = [];
+  try { tables = await grist.docApi.listTables(); }
+  catch (e) { say('Could not list tables: ' + errText(e), 'err'); return; }
+  if (!tables.includes(MAP_TABLE)) return;
+
   let rows;
   try { rows = toRecords(await grist.docApi.fetchTable(MAP_TABLE)); }
   catch (e) { say('Could not read <b>' + MAP_TABLE + '</b>: ' + errText(e), 'err'); return; }
 
   if (preferId) mapRow = rows.find(r => r.id === preferId) || null;
   if (!mapRow && boundTable) mapRow = rows.find(r => r[MC.plants] === boundTable) || null;
-  if (!mapRow) {
-    // Secondary pointer, in case the bound table id was unavailable.
+  // Only fall back to the saved pointer when the table id is genuinely unknown.
+  // Widget options travel with a duplicated page or widget, so trusting this
+  // pointer would make the copy adopt, and then overwrite, the original's row.
+  if (!mapRow && !boundTable) {
     try {
       const opt = await grist.widgetApi.getOption('mapRowId');
       if (opt) mapRow = rows.find(r => r.id === opt) || null;
     } catch { /* options unavailable, ignore */ }
   }
+  if (!mapRow) {
+    // Grist derives a table's id from its name, so renaming a table changes the id
+    // and strands the row that pointed at the old one. A row naming a table that no
+    // longer exists cannot belong to any live widget, so it is safe to offer back.
+    orphanRows = rows.filter(r => r[MC.plants] && !tables.includes(r[MC.plants]));
+  }
+
   if (mapRow) { try { await grist.widgetApi.setOption('mapRowId', mapRow.id); } catch {} }
+}
+
+function offerReattach() {
+  if (mapRow || !orphanRows.length || !boundTable) return;
+
+  if (orphanRows.length === 1) {
+    const r = orphanRows[0];
+    say('This table has no map yet, but <b>' + (r[MC.name] || 'row ' + r.id) +
+        '</b> is left over from a table called <b>' + r[MC.plants] + '</b> that no longer ' +
+        'exists. Renaming a table changes its id, which is the usual cause. ' +
+        '<button class="btn" id="reattach" style="margin-left:6px">Use it for this table</button>',
+        'warn');
+    const b = $('#reattach');
+    if (b) b.addEventListener('click', reattach);
+  } else {
+    say(orphanRows.length + ' rows in <b>' + MAP_TABLE + '</b> point at tables that no longer ' +
+        'exist, so I can\'t tell which belongs here. Set <b>' + MC.plants + '</b> to <b>' +
+        boundTable + '</b> on the right one.', 'warn');
+  }
+}
+
+async function reattach() {
+  const r = orphanRows[0];
+  try {
+    await grist.getTable(MAP_TABLE).update({ id: r.id, fields: { [MC.plants]: boundTable } });
+    await loadMapRow(r.id);
+    await loadImageAndPoints();
+    say('Reconnected to <b>' + (r[MC.name] || 'row ' + r.id) + '</b>.', 'info');
+  } catch (e) {
+    say('Could not reconnect that row: ' + errText(e), 'err');
+  }
 }
 
 /* ============================================================
@@ -669,6 +724,7 @@ async function loadMapRow(preferId) {
   await loadMapRow();
   await loadImageAndPoints();
   checkPlantColumns();
+  offerReattach();
   await seedRecordsIfEmpty();
 })();
 
