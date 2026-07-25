@@ -141,6 +141,14 @@
 
   /* ---- map ---- */
   #map { flex: 1 1 auto; background: var(--mapbg); min-height: 140px; }
+  /* Place and Calibrate are both "click an exact point", so the grab hand is wrong.
+     Beats Leaflet's own .leaflet-grab and .leaflet-dragging rules on specificity.
+     Markers keep their own pointer/move cursors, since those are set on the marker. */
+  #map.mode-place, #map.mode-calibrate { cursor: crosshair; }
+  /* A draggable pin says so. Declared here rather than relying on Leaflet's own
+     rule, which competes with .leaflet-interactive's pointer on equal specificity.
+     Covers placed pins in Move mode and unplaced pins, which drag in any mode. */
+  .leaflet-marker-draggable { cursor: move; }
   .leaflet-container { background: var(--mapbg); font-family: var(--sans); }
   .leaflet-bar a, .leaflet-bar a:hover {
     background: var(--surface); color: var(--ink); border-bottom-color: var(--line);
@@ -855,6 +863,8 @@ function setMode(m) {
     .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
   $('#hint').textContent = HINTS[m];
   $('#calib').classList.toggle('open', m === 'calibrate');
+  $('#map').classList.toggle('mode-place', m === 'place');
+  $('#map').classList.toggle('mode-calibrate', m === 'calibrate');
   markers.forEach(mk => mk.dragging && (m === 'move' ? mk.dragging.enable() : mk.dragging.disable()));
   drawControlPoints();
   if (map) requestAnimationFrame(() => map.invalidateSize({ animate: false }));
