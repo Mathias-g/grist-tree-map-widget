@@ -606,7 +606,13 @@ async function loadMapRow(preferId) {
    ============================================================ */
 (async function boot() {
   try {
-    grist.ready({ requiredAccess: 'full', onEditOptions: () => setMode('calibrate') });
+    grist.ready({
+      requiredAccess: 'full',
+      // Lets this widget act as a linking source, which is what makes setCursorPos
+      // move the cursor in widgets that Select By the map.
+      allowSelectBy: true,
+      onEditOptions: () => setMode('calibrate')
+    });
   } catch (e) {
     say('Could not initialise the Grist API: ' + errText(e), 'err');
   }
