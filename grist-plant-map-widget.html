@@ -150,13 +150,23 @@
      Covers placed pins in Move mode and unplaced pins, which drag in any mode. */
   .leaflet-marker-draggable { cursor: move; }
   .leaflet-container { background: var(--mapbg); font-family: var(--sans); }
-  .leaflet-bar a, .leaflet-bar a:hover {
+  .leaflet-bar { border-color: var(--line); }
+  /* Leaflet styles :hover and :focus together with a light background. Overriding
+     only :hover leaves a control white after it has been clicked, which in dark mode
+     also hides the icon. All three states are set here. */
+  .leaflet-bar a,
+  .leaflet-bar a:hover,
+  .leaflet-bar a:focus,
+  .leaflet-bar a:active {
     background: var(--surface); color: var(--ink); border-bottom-color: var(--line);
+    -webkit-tap-highlight-color: transparent;
   }
   .leaflet-bar a:hover { background: var(--surface-2); }
-  .leaflet-bar { border-color: var(--line); }
-  .fit-btn { display: flex; align-items: center; justify-content: center; }
-  .fit-btn svg { display: block; }
+  .leaflet-bar a:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
+  .leaflet-bar a.leaflet-disabled { background: var(--surface); color: var(--muted); }
+  /* Needs to outrank .leaflet-bar a, which sets display: block. */
+  .leaflet-bar a.fit-btn { display: flex; align-items: center; justify-content: center; }
+  .leaflet-bar a.fit-btn svg { display: block; }
 
   .pin {
     width: 14px; height: 14px; border-radius: 50%;
