@@ -176,6 +176,9 @@ Press **Save calibration** when you're happy.
  
 > Existing plants keep whatever coordinates they were given. Recalibrating does not move
 > them. Get the calibration right before you start placing plants.
+
+<img width="1301" height="895" alt="image" src="https://github.com/user-attachments/assets/809fba1b-f16a-49f3-abab-ea1adc4df47f" />
+
  
 ### 6. Place plants
  
@@ -202,6 +205,9 @@ row below is the usual setup:
 |-------------------------------------|----------------------------------------------------|
 | Plants table **selects by** the map | Clicking a pin selects that plant's row in the table |
 | Map **selects by** the plants table | Clicking a row in the table highlights its pin     |
+
+<img width="1331" height="1022" alt="image" src="https://github.com/user-attachments/assets/41daeea5-6c20-433f-91e1-ac9df35b1154" />
+
  
 ---
  
