@@ -7,6 +7,8 @@ recognisable features are in the real world, and it works out the mapping betwee
 pixels and latitude/longitude. After that you can click to add a plant, drag to correct it,
 and click a pin to jump to that row in Grist.
 
+<img width="1060" height="454" alt="image" src="https://github.com/user-attachments/assets/2480048e-b47e-4454-99b0-ab119faffd02" />
+
 ---
 
 ## Features
@@ -29,8 +31,8 @@ and click a pin to jump to that row in Grist.
 - **Place** – click the photo to create a new row with coordinates filled in.
 - **Move** – drag a pin to correct its position; the coordinates are written on release.
 - **Unplaced strip** – plants with no coordinates, or coordinates far outside the current
-  image, appear as hollow pins in a labelled strip beside the photo instead of silently
-  vanishing. Drag one onto the photo to place it. Nothing is written until you do.
+  image, appear as hollow pins in a labelled strip beside the photo. Drag one onto the
+  photo to place it; nothing is written until you do.
 
 **Configuration lives in the document, not in the code**
 
@@ -38,11 +40,10 @@ and click a pin to jump to that row in Grist.
   first, so a 20 MP drone frame becomes about 1–2 MB.
 - Calibration is saved to a `Map_images` table in your document, so it survives reloads
   and is shared by everyone using the document.
-- The table and its first row are created for you on first save or upload. Nothing is
-  created just because the widget was added to a page.
+- The table and its first row are created on your first save or upload, not when the
+  widget is added to a page.
 - One map image per plants table, so a document can hold several plots with a widget each.
-- Calibration is invalidated automatically if the image is replaced or its dimensions
-  change, rather than silently applying an old transform to a new photo.
+- Replacing the image invalidates the calibration and prompts you to redo it.
 - Explicit **Save** and **Discard**, with an unsaved-changes indicator. A calibration
   worse than 1 m asks for confirmation before saving.
 
@@ -52,8 +53,8 @@ and click a pin to jump to that row in Grist.
   default with a per-widget override.
 - Layout adapts: the calibration panel is a sidebar when the widget is wide, and a bottom
   drawer when it's narrow.
-- Errors are shown in the widget. Missing columns, refused writes, rejected uploads and
-  unreadable calibration data all produce a visible message rather than doing nothing.
+- Errors are shown in the widget: missing columns, refused writes, rejected uploads and
+  unreadable calibration data each explain what to fix.
 
 ---
 
@@ -133,13 +134,9 @@ your own control.
 5. Paste the URL into Grist.
 
 Rename the file to `index.html` if you'd rather have a shorter URL ending in a slash.
-Nothing in the code depends on its own filename.
 
 Keep `plot.jpg` alongside the HTML. It's the placeholder shown before you upload a real
 image, and it's what the demo control points refer to.
-
-`app.netlify.com/drop` will host a folder over HTTPS in about fifteen seconds if you just
-want to try a change without setting up Pages.
 
 </details>
 
@@ -193,6 +190,8 @@ Press **Save calibration** when you're happy.
 Switch to **Place** and click. Switch to **Move** to correct. Switch to **Select** and add
 a card widget next to the map to see each plant's details as you click around.
 
+Press `f` at any time to re-fit the view to the image.
+
 ---
 
 ## How it works
@@ -210,7 +209,7 @@ lng = d·x + e·y + f
 Six unknowns, so three points determine it exactly and more are fitted by least squares.
 Affine covers translation, rotation, scale and shear, which is what you need for a
 near-nadir aerial photo over flat ground. It does not correct lens distortion or terrain
-relief, so fly as close to straight down as you can and avoid steep slopes.
+relief, so a photo taken close to straight down over flat ground calibrates best.
 
 The reported error is the RMS distance in metres between where each control point actually
 is and where the fitted transform puts it.
@@ -263,21 +262,13 @@ of the `<script>` block, for anyone hosting their own copy.
 |---------------------|--------------------------------|--------|
 | `CONFIG.cols`       | `{lat:'Lat', lng:'Lng', label:'Name'}` | Column IDs on the plants table |
 | `CONFIG.placeholderUrl` | `'plot.jpg'`               | Demo image shown before anything is uploaded |
-| `CONFIG.placeholderPoints` | three demo points       | Demo calibration, so the widget does something on first run |
+| `CONFIG.placeholderPoints` | three demo points       | Demo calibration for the placeholder image |
 | `CONFIG.newRecordDefaults` | `{}`                    | Extra fields set on every plant created by clicking |
 | `CONFIG.maxRmsMetres` | `1.0`                        | Fit error above which saving asks for confirmation |
 | `MAX_EDGE_PX`       | `4000`                         | Longest edge after downscaling on upload |
 | `JPEG_QUALITY`      | `0.85`                         | Re-encode quality on upload |
 | `MAP_TABLE`         | `'Map_images'`                 | Name of the table holding maps and calibration |
 | `TRAY_GAP`, `TRAY_W` | `26`, `96`                    | Position and width of the unplaced strip |
-
----
-
-## Keyboard
-
-| Key | Action |
-|-----|--------|
-| `f` | Re-fit the view to the image (and the unplaced strip, if it has contents) |
 
 ---
 
@@ -314,11 +305,6 @@ The label and the ID differ. Check the ID in the right-hand panel under the colu
 **Everything shows as unplaced after I recalibrated.**
 Expected if the new calibration puts the old coordinates outside the photo. Drag them back
 onto the map, or clear their coordinates and place them again.
-
-**The map is squashed or oddly framed.**
-Press `f` to re-fit. If it persists, that's a bug worth reporting.
-
----
 
 ## Limitations
 
