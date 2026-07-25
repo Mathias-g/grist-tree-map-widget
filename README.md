@@ -132,6 +132,7 @@ Keep `plot.jpg` alongside the HTML. It's the placeholder shown before you upload
 image, and it's what the demo control points refer to.
  
 </details>
+
 ### 3. Grant access
  
 In the widget's right-hand panel, set **Access level** to **Full document access**.
