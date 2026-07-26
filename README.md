@@ -7,7 +7,7 @@ recognisable features are in the real world, and it works out the mapping betwee
 pixels and latitude/longitude. After that you can click to add a plant, drag to correct it,
 and click a pin to jump to that row in Grist.
 
-<img width="622" height="525" alt="image" src="https://github.com/user-attachments/assets/09b48248-68dc-4ec5-9222-9f3139d83f77" />
+<img width="745" height="475" alt="image" src="https://github.com/user-attachments/assets/e887e4eb-1ccb-4553-9faa-90ffed041f4e" />
 
 ---
 
